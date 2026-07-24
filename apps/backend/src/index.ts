@@ -19,33 +19,44 @@ const server: Server = app.listen(env.PORT, () => {
 });
 
 /** Graceful shutdown: stop accepting connections, then drain the DB pool. */
-async function shutdown(signal: string): Promise<void> {
-  logger.info({ signal }, "Shutting down…");
+let shutdownPromise: Promise<void> | undefined;
 
-  const forceExit = setTimeout(() => {
-    logger.error("Forced shutdown after timeout");
-    process.exit(1);
-  }, 10_000);
-  forceExit.unref();
+function shutdown(signal: string): Promise<void> {
+  if (shutdownPromise) return shutdownPromise;
 
-  server.close(async (err) => {
-    if (err) {
-      logger.error({ err }, "Error during server close");
+  shutdownPromise = new Promise<void>((resolve) => {
+    logger.info({ signal }, "Shutting down…");
+
+    const forceExit = setTimeout(() => {
+      logger.error("Forced shutdown after timeout");
       process.exit(1);
-    }
-    try {
-      await closeDatabase();
-      logger.info("Shutdown complete");
-      process.exit(0);
-    } catch (dbErr) {
-      logger.error({ err: dbErr }, "Error closing database");
-      process.exit(1);
-    }
+    }, 10_000);
+    forceExit.unref();
+
+    server.close(async (err) => {
+      if (err) {
+        logger.error({ err }, "Error during server close");
+        process.exit(1);
+      }
+      try {
+        await closeDatabase();
+        logger.info("Shutdown complete");
+        resolve();
+        process.exit(0);
+      } catch (dbErr) {
+        logger.error({ err: dbErr }, "Error closing database");
+        process.exit(1);
+      }
+    });
   });
+
+  return shutdownPromise;
 }
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
-  process.on(signal, () => void shutdown(signal));
+  process.on(signal, async () => {
+    await shutdown(signal);
+  });
 }
 
 process.on("unhandledRejection", (reason) => {

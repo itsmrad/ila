@@ -22,24 +22,62 @@ const csv = () =>
         : [],
     );
 
+const httpUrl = (name: string) =>
+  z
+    .string()
+    .url(`${name} must be a valid URL`)
+    .refine(
+      (value) => {
+        const protocol = new URL(value).protocol;
+        return protocol === "http:" || protocol === "https:";
+      },
+      `${name} must use http or https`,
+    );
+
+const postgresUrl = z
+  .string()
+  .url("DATABASE_URL must be a valid connection URL")
+  .refine(
+    (value) => {
+      const protocol = new URL(value).protocol;
+      return protocol === "postgres:" || protocol === "postgresql:";
+    },
+    "DATABASE_URL must use postgres or postgresql",
+  );
+
+const extensionOrigin = z
+  .string()
+  .url("EXTENSION_ORIGIN must be a valid URL")
+  .refine(
+    (value) => {
+      const url = new URL(value);
+      return (
+        url.protocol === "chrome-extension:" &&
+        /^[a-p]{32}$/.test(url.hostname) &&
+        (url.pathname === "" || url.pathname === "/")
+      );
+    },
+    "EXTENSION_ORIGIN must be a Chrome extension origin",
+  );
+
 const envSchema = z
   .object({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    PORT: z.coerce.number().int().positive().default(3005),
+    PORT: z.coerce.number().int().positive().default(4000),
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
 
     // Better Auth
-    BETTER_AUTH_URL: z.string().url(),
+    BETTER_AUTH_URL: httpUrl("BETTER_AUTH_URL"),
     BETTER_AUTH_SECRET: z
       .string()
       .min(32, "BETTER_AUTH_SECRET must be at least 32 characters"),
 
     // Database
-    DATABASE_URL: z.string().url("DATABASE_URL must be a valid connection URL"),
+    DATABASE_URL: postgresUrl,
 
     // Google OAuth (optional — provider is only registered when both are set)
     GOOGLE_CLIENT_ID: z.string().optional(),
@@ -47,8 +85,13 @@ const envSchema = z
 
     // Origins / redirects
     TRUSTED_ORIGINS: csv(),
-    EXTENSION_REDIRECT_URL: z.string().url().optional(),
-    WEB_APP_URL: z.string().url().optional(),
+    /** Exact `chrome-extension://<id>` origin permitted to call the API. */
+    EXTENSION_ORIGIN: extensionOrigin.optional(),
+    /** Exact Chrome identity callback or web callback used for token hand-off. */
+    EXTENSION_REDIRECT_URL: httpUrl("EXTENSION_REDIRECT_URL").optional(),
+    WEB_APP_URL: httpUrl("WEB_APP_URL").optional(),
+    /** CIDRs of reverse proxies that are allowed to provide X-Forwarded-For. */
+    TRUSTED_PROXY_CIDRS: csv(),
   })
   .superRefine((value, ctx) => {
     if (

@@ -18,16 +18,19 @@ const allowedOrigins = new Set(
     ...env.TRUSTED_ORIGINS,
     env.WEB_APP_URL,
     env.BETTER_AUTH_URL,
-    env.EXTENSION_REDIRECT_URL,
+    env.EXTENSION_ORIGIN,
   ].filter((value): value is string => Boolean(value)),
 );
 
 export function createApp(): Express {
   const app = express();
 
-  // Behind a proxy/load balancer in production — trust X-Forwarded-* headers
-  // so req.ip and secure-cookie detection work correctly.
-  app.set("trust proxy", 1);
+  // Trust only configured reverse proxies; a hop count can be spoofed when a
+  // request reaches this process directly.
+  app.set(
+    "trust proxy",
+    env.TRUSTED_PROXY_CIDRS.length ? env.TRUSTED_PROXY_CIDRS : false,
+  );
   app.disable("x-powered-by");
 
   app.use(requestLogger);
@@ -44,12 +47,15 @@ export function createApp(): Express {
     cors({
       origin(origin, callback) {
         // Allow same-origin / server-to-server (no Origin header) and any
-        // explicitly trusted origin. Chrome extensions send an Origin too.
-        if (!origin || allowedOrigins.has(origin) || origin.startsWith("chrome-extension://")) {
+        // explicitly trusted origin.
+        if (!origin || allowedOrigins.has(origin)) {
           callback(null, true);
           return;
         }
-        callback(new Error(`Origin not allowed by CORS: ${origin}`));
+        // Do not throw here: rejected preflights should not become 500s (or
+        // expose a development stack trace). The request proceeds without any
+        // CORS permission, so browsers block cross-origin access.
+        callback(null, false);
       },
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

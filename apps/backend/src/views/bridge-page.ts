@@ -53,7 +53,7 @@ export function renderBridgePage(config: BridgePageConfig): string {
     <div id="msg">Completing sign-in…</div>
   </div>
 <script>
-  const R = ${JSON.stringify(payload)};
+  const R = ${serializeForInlineScript(payload)};
   const msg = document.getElementById("msg");
   const spinner = document.getElementById("spinner");
   if (R.ok) {
@@ -69,3 +69,4 @@ export function renderBridgePage(config: BridgePageConfig): string {
 </body>
 </html>`;
 }
+import { serializeForInlineScript } from "@/views/script-data";

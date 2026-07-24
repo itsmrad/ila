@@ -15,8 +15,7 @@ const trustedOrigins = Array.from(
     [
       ...env.TRUSTED_ORIGINS,
       env.WEB_APP_URL,
-      // Chrome identity redirect surface for extensions.
-      "chrome-extension://*",
+      env.EXTENSION_ORIGIN,
     ].filter((value): value is string => Boolean(value)),
   ),
 );
@@ -43,14 +42,18 @@ export const auth = betterAuth({
     revokeSessionsOnPasswordReset: true,
     sendResetPassword: async ({ user, url }) => {
       // Placeholder until an email provider is configured.
-      logger.info({ email: user.email, url }, "Password reset requested");
+      void user;
+      void url;
+      logger.info("Password reset requested");
     },
   },
 
   emailVerification: {
     sendOnSignUp: false,
     sendVerificationEmail: async ({ user, url }) => {
-      logger.info({ email: user.email, url }, "Email verification requested");
+      void user;
+      void url;
+      logger.info("Email verification requested");
     },
   },
 
@@ -95,9 +98,15 @@ export const auth = betterAuth({
 
   advanced: {
     useSecureCookies: isProduction,
-    ipAddress: {
-      ipAddressHeaders: ["x-forwarded-for", "x-real-ip"],
-    },
+    // Never trust a client-supplied forwarding header unless its proxy chain
+    // has been configured. Without trusted proxies Better Auth falls back to a
+    // shared bucket rather than accepting a spoofable client IP.
+    ipAddress: env.TRUSTED_PROXY_CIDRS.length
+      ? {
+          ipAddressHeaders: ["x-forwarded-for"],
+          trustedProxies: env.TRUSTED_PROXY_CIDRS,
+        }
+      : { ipAddressHeaders: [] },
     defaultCookieAttributes: {
       sameSite: "lax",
     },

@@ -70,15 +70,14 @@ export async function launchLogin(): Promise<string> {
   return token;
 }
 
-/** Revoke the session on the backend and clear the local token. */
+/** Revoke the session on the backend, then clear the locally stored token. */
 export async function signOut(token: string): Promise<void> {
-  try {
-    await fetch(`${BACKEND_URL}/api/auth/sign-out`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}` },
-    });
-  } catch {
-    // Network failure on sign-out is non-fatal; local state is cleared anyway.
+  const response = await fetch(`${BACKEND_URL}/api/auth/sign-out`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error("Sign-out request failed.");
   }
   await clearStoredToken();
 }

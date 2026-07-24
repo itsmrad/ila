@@ -96,7 +96,7 @@ export function renderLoginPage(config: LoginPageConfig): string {
   </div>
 
 <script>
-  const CFG = ${JSON.stringify(cfg)};
+  const CFG = ${serializeForInlineScript(cfg)};
   const $ = (id) => document.getElementById(id);
   const msg = $("msg");
 
@@ -184,3 +184,4 @@ export function renderLoginPage(config: LoginPageConfig): string {
 </body>
 </html>`;
 }
+import { serializeForInlineScript } from "@/views/script-data";

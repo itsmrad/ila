@@ -13,7 +13,11 @@ export const requestLogger = pinoHttp({
   logger,
   genReqId: (req, res) => {
     const existing = req.headers["x-request-id"];
-    const id = (Array.isArray(existing) ? existing[0] : existing) ?? randomUUID();
+    const candidate = Array.isArray(existing) ? existing[0] : existing;
+    const id =
+      typeof candidate === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(candidate)
+        ? candidate
+        : randomUUID();
     res.setHeader("x-request-id", id);
     return id;
   },

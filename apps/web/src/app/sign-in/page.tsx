@@ -13,14 +13,26 @@ export default function SignInPage() {
     e.preventDefault();
     setPending(true);
     setStatus(null);
-    const { error } = await signIn.email({ email, password });
-    setPending(false);
-    setStatus(error ? error.message ?? "Sign in failed" : "Signed in!");
+    try {
+      const { error } = await signIn.email({ email, password });
+      setStatus(error ? error.message ?? "Sign in failed" : "Signed in!");
+    } catch {
+      setStatus("Sign in failed. Please try again.");
+    } finally {
+      setPending(false);
+    }
   }
 
   async function onGoogle() {
+    setPending(true);
     setStatus(null);
-    await signIn.social({ provider: "google", callbackURL: "/" });
+    try {
+      await signIn.social({ provider: "google", callbackURL: "/" });
+    } catch {
+      setStatus("Google sign in failed. Please try again.");
+    } finally {
+      setPending(false);
+    }
   }
 
   const field: React.CSSProperties = {
@@ -91,6 +103,7 @@ export default function SignInPage() {
         <button
           type="button"
           onClick={onGoogle}
+          disabled={pending}
           style={{
             width: "100%",
             marginTop: 10,
@@ -100,7 +113,7 @@ export default function SignInPage() {
             background: "#fff",
             color: "#1f2328",
             fontWeight: 600,
-            cursor: "pointer",
+            cursor: pending ? "not-allowed" : "pointer",
           }}
         >
           Continue with Google

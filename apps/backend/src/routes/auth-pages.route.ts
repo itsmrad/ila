@@ -15,11 +15,16 @@ import { env } from "@/config/env";
  */
 export const authPagesRouter: Router = Router();
 
+const allowedRedirectOrigins = new Set(
+  [env.EXTENSION_REDIRECT_URL, env.WEB_APP_URL]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new URL(value).origin),
+);
+
 /**
  * Only allow redirecting the session token to trusted destinations. This
  * prevents an open-redirect that would leak the session token to an arbitrary
- * origin. Chrome extensions use `https://<id>.chromiumapp.org/` (via
- * `chrome.identity.launchWebAuthFlow`) or a `chrome-extension://` URL.
+ * origin. The extension callback must be explicitly configured.
  */
 function isAllowedRedirect(target: string): boolean {
   let url: URL;
@@ -29,37 +34,24 @@ function isAllowedRedirect(target: string): boolean {
     return false;
   }
 
-  // Chrome extension auth-flow surfaces.
-  if (url.protocol === "chrome-extension:") return true;
-  if (url.protocol === "https:" && url.hostname.endsWith(".chromiumapp.org")) {
-    return true;
-  }
-
-  // Explicitly configured web/extension callback origins.
-  const allowedOrigins = [env.EXTENSION_REDIRECT_URL, env.WEB_APP_URL]
-    .filter((value): value is string => Boolean(value))
-    .map((value) => {
-      try {
-        return new URL(value).origin;
-      } catch {
-        return undefined;
-      }
-    })
-    .filter((value): value is string => Boolean(value));
-
-  return allowedOrigins.includes(url.origin);
+  return allowedRedirectOrigins.has(url.origin);
 }
 
-function resolveRedirect(raw: unknown): string {
+function resolveRedirect(raw: unknown): string | undefined {
   const candidate =
     typeof raw === "string" && raw.length > 0
       ? raw
-      : (env.EXTENSION_REDIRECT_URL ?? env.WEB_APP_URL ?? "/");
-  return candidate;
+      : (env.EXTENSION_REDIRECT_URL ?? env.WEB_APP_URL);
+  return candidate && isAllowedRedirect(candidate) ? candidate : undefined;
 }
 
 authPagesRouter.get("/login", (req, res) => {
   const redirectUrl = resolveRedirect(req.query.redirect);
+
+  if (!redirectUrl) {
+    res.status(400).type("text").send("This sign-in redirect is not allowed.");
+    return;
+  }
 
   const html = renderLoginPage({
     authBasePath: "/api/auth",
@@ -97,7 +89,7 @@ authPagesRouter.get("/auth/bridge", async (req, res) => {
       )
       .send(html);
 
-  if (!isAllowedRedirect(redirectUrl)) {
+  if (!redirectUrl) {
     sendHtml(
       renderBridgePage({
         kind: "error",

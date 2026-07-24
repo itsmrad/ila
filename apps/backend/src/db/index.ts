@@ -1,6 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { sql } from "drizzle-orm";
-import { Pool } from "pg";
+import { Pool, type QueryConfig } from "pg";
 import { env, isProduction } from "@/config/env";
 import { logger } from "@/lib/logger";
 import * as schema from "@/db/schema";
@@ -27,6 +26,9 @@ export const db = drizzle(pool, { schema, logger: false });
 
 export type Database = typeof db;
 
+const HEALTH_QUERY_TIMEOUT_MS = 2_000;
+type TimedQueryConfig = QueryConfig & { query_timeout: number };
+
 /** Lightweight connectivity + latency probe used by the health route. */
 export async function checkDatabase(): Promise<{
   ok: boolean;
@@ -35,13 +37,31 @@ export async function checkDatabase(): Promise<{
 }> {
   const start = performance.now();
   try {
-    await db.execute(sql`select 1`);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `SET LOCAL statement_timeout = ${HEALTH_QUERY_TIMEOUT_MS}`,
+      );
+      const healthQuery: TimedQueryConfig = {
+        text: "SELECT 1",
+        query_timeout: HEALTH_QUERY_TIMEOUT_MS,
+      };
+      await client.query(healthQuery);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
     return { ok: true, latencyMs: Math.round(performance.now() - start) };
   } catch (error) {
+    logger.warn({ err: error }, "Database health check failed");
     return {
       ok: false,
       latencyMs: Math.round(performance.now() - start),
-      error: error instanceof Error ? error.message : "unknown error",
+      error: "Database health check failed",
     };
   }
 }

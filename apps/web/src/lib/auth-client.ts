@@ -8,7 +8,7 @@ import { usernameClient } from "better-auth/client/plugins";
  * origin behind a reverse proxy this can be left as the default.
  */
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3005",
+  baseURL: process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000",
   basePath: "/api/auth",
   plugins: [usernameClient()],
 });
