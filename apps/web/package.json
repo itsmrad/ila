@@ -1,0 +1,27 @@
+{
+  "name": "@ila/web",
+  "description": "ILA web frontend (Next.js App Router)",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "compile": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "better-auth": "^1.2.9",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@ila/typescript-config": "workspace:*",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "typescript": "^5.9.3"
+  }
+}
