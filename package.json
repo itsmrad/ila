@@ -1,0 +1,26 @@
+{
+  "name": "ila",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "compile": "turbo run compile",
+    "lint": "turbo run lint",
+    "extension:dev": "turbo run dev --filter=@ila/extension",
+    "extension:build": "turbo run build --filter=@ila/extension"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.6",
+    "typescript": "^5.9.3"
+  },
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": ">=18"
+  }
+}
