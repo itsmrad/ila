@@ -35,9 +35,20 @@ bun run compile      # typecheck everything
 ### Extension-only shortcuts
 
 ```bash
-bun run extension:dev     # wxt dev server
+bun run extension:dev     # wxt dev server (defaults to http://localhost:4000)
 bun run extension:build   # production build (.output/)
 ```
+
+A production extension build requires `VITE_BACKEND_URL`, because it sets both
+the API client's base URL and the manifest's `host_permissions`:
+
+```bash
+VITE_BACKEND_URL=https://api.example.com bun run extension:build
+```
+
+The build fails fast when it is unset, so a release cannot ship with localhost
+host permissions (which would let any local process receive a session token).
+The dev server and `--mode development` builds fall back to localhost.
 
 ## AI chat
 

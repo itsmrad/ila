@@ -39,8 +39,13 @@ export const chat = pgTable(
       .defaultNow(),
   },
   (table) => [
-    // Drives the history list: newest conversations for one owner.
-    index("chat_userId_updatedAt_idx").on(table.userId, table.updatedAt),
+    // Drives the history list: newest conversations for one owner. Includes
+    // `id` because pagination orders and seeks on `(updatedAt, id)`.
+    index("chat_userId_updatedAt_id_idx").on(
+      table.userId,
+      table.updatedAt,
+      table.id,
+    ),
   ],
 );
 

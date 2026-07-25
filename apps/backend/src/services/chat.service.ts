@@ -1,7 +1,9 @@
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import {
   CHAT_LIMITS,
+  decodeChatCursor,
   deriveChatTitle,
+  encodeChatCursor,
   messagePartSchema,
   type ChatDetailResponse,
   type ChatMessage,
@@ -191,7 +193,13 @@ export async function getConversationMessages(input: {
     .filter((message) => message.parts.length > 0);
 }
 
-/** All messages of a conversation, oldest first, for the history detail view. */
+/**
+ * A conversation with its messages, oldest first, for the history detail view.
+ *
+ * Capped to the same window the model sees (`maxModelMessages`) so an old,
+ * very long conversation cannot turn one request into an unbounded read — and
+ * so the transcript on screen matches the context the assistant actually has.
+ */
 export async function getChatDetail(input: {
   userId: string;
   chatId: string;
@@ -209,11 +217,15 @@ export async function getChatDetail(input: {
     .where(
       and(eq(chatMessage.chatId, owned.id), eq(chatMessage.userId, input.userId)),
     )
-    .orderBy(asc(chatMessage.sequence));
+    // Newest-first with a cap, then reversed, so the cap keeps the most recent
+    // turns rather than the oldest.
+    .orderBy(desc(chatMessage.sequence))
+    .limit(CHAT_LIMITS.maxModelMessages);
 
   return {
     chat: toSummary(owned),
     messages: rows
+      .reverse()
       .map((row) => ({
         id: row.id,
         role: row.role,
@@ -224,23 +236,32 @@ export async function getChatDetail(input: {
   };
 }
 
-/** Newest-first page of the caller's conversations. */
+/**
+ * Newest-first page of the caller's conversations.
+ *
+ * Ordering and the page boundary both use `(updatedAt, id)`. With `updatedAt`
+ * alone, two conversations sharing a timestamp would straddle the boundary and
+ * one of them would never appear on any page.
+ */
 export async function listChats(input: {
   userId: string;
   limit: number;
   cursor?: string;
 }): Promise<ListChatsResponse> {
-  const cursorDate = input.cursor ? new Date(input.cursor) : undefined;
+  const cursor = input.cursor ? decodeChatCursor(input.cursor) : null;
+
+  const boundary = cursor
+    ? or(
+        lt(chat.updatedAt, new Date(cursor.updatedAt)),
+        and(eq(chat.updatedAt, new Date(cursor.updatedAt)), lt(chat.id, cursor.id)),
+      )
+    : undefined;
 
   const rows = await db
     .select()
     .from(chat)
-    .where(
-      cursorDate && !Number.isNaN(cursorDate.getTime())
-        ? and(eq(chat.userId, input.userId), lt(chat.updatedAt, cursorDate))
-        : eq(chat.userId, input.userId),
-    )
-    .orderBy(desc(chat.updatedAt))
+    .where(and(eq(chat.userId, input.userId), boundary))
+    .orderBy(desc(chat.updatedAt), desc(chat.id))
     // Fetch one extra row to detect whether another page exists.
     .limit(input.limit + 1);
 
@@ -250,7 +271,13 @@ export async function listChats(input: {
 
   return {
     chats: page.map(toSummary),
-    nextCursor: hasMore && last ? last.updatedAt.toISOString() : null,
+    nextCursor:
+      hasMore && last
+        ? encodeChatCursor({
+            updatedAt: last.updatedAt.toISOString(),
+            id: last.id,
+          })
+        : null,
   };
 }
 

@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "@/lib/auth";
-import { UnauthorizedError } from "@/lib/errors";
+import { AppError, UnauthorizedError } from "@/lib/errors";
 
 /**
  * Authenticated principal attached to a request by {@link requireAuth}.
@@ -24,6 +24,20 @@ declare global {
 }
 
 /**
+ * Upper bound on a session-store lookup. A stalled query would otherwise hold
+ * the request (and a connection) open indefinitely.
+ */
+const SESSION_LOOKUP_TIMEOUT_MS = 5_000;
+
+class SessionLookupTimeoutError extends AppError {
+  constructor() {
+    super(503, "SESSION_LOOKUP_TIMEOUT", "Authentication is temporarily unavailable.", {
+      expose: true,
+    });
+  }
+}
+
+/**
  * Gate for every non-public API route.
  *
  * Accepts either the browser cookie session (web app) or an
@@ -33,10 +47,19 @@ declare global {
  * taken from the request body.
  */
 export const requireAuth: RequestHandler = async (req, _res, next) => {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), SESSION_LOOKUP_TIMEOUT_MS);
+  timer.unref?.();
+
   try {
-    const result = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
+    const result = await Promise.race([
+      auth.api.getSession({ headers: fromNodeHeaders(req.headers) }),
+      new Promise<never>((_resolve, reject) => {
+        timeout.signal.addEventListener("abort", () =>
+          reject(new SessionLookupTimeoutError()),
+        );
+      }),
+    ]);
 
     if (!result?.user?.id) {
       throw new UnauthorizedError("Authentication required");
@@ -46,6 +69,8 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
     next();
   } catch (error) {
     next(error);
+  } finally {
+    clearTimeout(timer);
   }
 };
 

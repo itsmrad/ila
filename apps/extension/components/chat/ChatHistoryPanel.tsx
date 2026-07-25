@@ -74,11 +74,17 @@ export function ChatHistoryPanel({
     }
   }, []);
 
+  // Reload on open and whenever the parent signals a change.
   useEffect(() => {
     if (!open) return;
     void load();
-    closeButton.current?.focus();
   }, [open, load, refreshToken]);
+
+  // Move focus into the panel only as it opens. Doing this on every refresh
+  // would yank focus away mid-interaction (a refresh fires when a turn ends).
+  useEffect(() => {
+    if (open) closeButton.current?.focus();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

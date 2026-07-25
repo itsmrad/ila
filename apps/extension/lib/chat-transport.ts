@@ -32,6 +32,19 @@ export interface ChatTransportContext {
   getPageContext: () => PageContext | undefined;
 }
 
+/**
+ * True for a cancelled request — either `AbortController.abort()` or a
+ * `DOMException` with `name === 'AbortError'`.
+ */
+function isAbortError(cause: unknown): boolean {
+  return (
+    (cause instanceof Error && cause.name === 'AbortError') ||
+    (typeof DOMException !== 'undefined' &&
+      cause instanceof DOMException &&
+      cause.name === 'AbortError')
+  );
+}
+
 /** Collapse a UI message down to the plain text parts the API accepts. */
 function toInboundMessage(
   message: UIMessage,
@@ -103,7 +116,11 @@ export function createChatTransport(
       let response: Response;
       try {
         response = await fetch(input as RequestInfo, init);
-      } catch {
+      } catch (cause) {
+        // An abort is not a failure: it is the user pressing Stop, or a
+        // timeout. The SDK recognises these and returns to `ready` without
+        // surfacing an error, so it must reach it unchanged.
+        if (isAbortError(cause)) throw cause;
         throw new Error('Could not reach the ILA backend. Is it running?');
       }
 

@@ -25,7 +25,7 @@
 
 ## 3.3 Message history persistence (local only)
 
-- Store chat history in [`chrome.storage](http://chrome.storage).local` or [`browser.storage](http://browser.storage).local` when the sidepanel unmounts.[web:52][web:56]
+- Store chat history in `chrome.storage.local` or `browser.storage.local` when the sidepanel unmounts.
 - On mount, restore the last session’s messages.
 
 **Best practices:**

@@ -60,6 +60,8 @@ function ModelMenu({
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -69,7 +71,10 @@ function ModelMenu({
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        trigger.current?.focus();
+      }
     };
     document.addEventListener('mousedown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -79,13 +84,30 @@ function ModelMenu({
     };
   }, [open]);
 
+  // Move focus to the current selection when the popup opens.
+  useEffect(() => {
+    if (!open) return;
+    const group = groupRef.current;
+    if (!group) return;
+    const selected = group.querySelector<HTMLButtonElement>(
+      'button[aria-pressed="true"]',
+    );
+    (selected ?? group.querySelector<HTMLButtonElement>('button'))?.focus();
+  }, [open]);
+
   if (models.length === 0) return null;
+
+  const select = (id: string) => {
+    onModelChange(id);
+    setOpen(false);
+    trigger.current?.focus();
+  };
 
   return (
     <div className="relative" ref={menuRef}>
       <IconButton
+        ref={trigger}
         label="Model"
-        aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={open ? 'bg-[#f0f0f0] text-[#303030]' : ''}
@@ -94,36 +116,39 @@ function ModelMenu({
       </IconButton>
 
       {open && (
-        <div
-          role="menu"
-          className="absolute bottom-[calc(100%+12px)] left-0 w-[240px] p-2 rounded-[24px] bg-white border border-[#e8e8e8] shadow-[0_16px_40px_#00000018,0_4px_12px_#00000008] z-20 flex flex-col gap-1"
-        >
-          <div className="px-3 pt-2 pb-1 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+        <div className="absolute bottom-[calc(100%+12px)] left-0 w-[240px] p-2 rounded-[24px] bg-white border border-[#e8e8e8] shadow-[0_16px_40px_#00000018,0_4px_12px_#00000008] z-20 flex flex-col gap-1">
+          <div
+            id="model-group-label"
+            className="px-3 pt-2 pb-1 text-[11px] font-bold text-gray-400 uppercase tracking-wider"
+          >
             Model
           </div>
-          {models.map((option) => {
-            const selected = option.id === model;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                onClick={() => {
-                  onModelChange(option.id);
-                  setOpen(false);
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left text-gray-700 hover:bg-[#f5f5f5] rounded-xl transition-colors font-medium cursor-pointer"
-              >
-                <span className="w-[18px] shrink-0">
-                  {selected && <Check size={16} className="text-[#6d5efc]" />}
-                </span>
-                <span className="truncate" title={option.id}>
-                  {option.label}
-                </span>
-              </button>
-            );
-          })}
+          {/*
+            A group of toggle buttons rather than role="menu": Tab and
+            Shift+Tab already move between them natively, so the announced
+            semantics match the behaviour without hand-rolled key handling.
+          */}
+          <div ref={groupRef} role="group" aria-labelledby="model-group-label">
+            {models.map((option) => {
+              const selected = option.id === model;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => select(option.id)}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left text-gray-700 hover:bg-[#f5f5f5] rounded-xl transition-colors font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                >
+                  <span className="w-[18px] shrink-0">
+                    {selected && <Check size={16} className="text-[#6d5efc]" />}
+                  </span>
+                  <span className="truncate" title={option.id}>
+                    {option.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

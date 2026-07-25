@@ -111,11 +111,27 @@ export type PageContext = z.infer<typeof pageContextSchema>;
  * database, so a client cannot forge assistant history (a prompt-injection and
  * billing-abuse vector) or replay another user's conversation.
  */
-export const inboundUserMessageSchema = z.object({
-  id: z.string().min(1).max(64),
-  role: z.literal("user"),
-  parts: z.array(textPartSchema).min(1).max(CHAT_LIMITS.maxPartsPerMessage),
-});
+export const inboundUserMessageSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    role: z.literal("user"),
+    parts: z.array(textPartSchema).min(1).max(CHAT_LIMITS.maxPartsPerMessage),
+  })
+  .superRefine((value, ctx) => {
+    // Per-part caps alone would allow `maxPartsPerMessage × maxMessageChars`,
+    // so the budget is also enforced across the whole message.
+    const total = value.parts.reduce((sum, part) => sum + part.text.length, 0);
+    if (total > CHAT_LIMITS.maxMessageChars) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_big,
+        type: "string",
+        maximum: CHAT_LIMITS.maxMessageChars,
+        inclusive: true,
+        path: ["parts"],
+        message: `Message must not exceed ${CHAT_LIMITS.maxMessageChars} characters in total`,
+      });
+    }
+  });
 
 export type InboundUserMessage = z.infer<typeof inboundUserMessageSchema>;
 
@@ -170,6 +186,49 @@ export const chatSummarySchema = z.object({
 
 export type ChatSummary = z.infer<typeof chatSummarySchema>;
 
+/**
+ * Position of the last item on the previous page.
+ *
+ * Both fields are needed: ordering on `updatedAt` alone would silently skip
+ * conversations that share a timestamp with the page boundary.
+ */
+export interface ChatCursor {
+  updatedAt: string;
+  id: string;
+}
+
+/** Separator that cannot occur in an ISO timestamp or a UUID. */
+const CURSOR_SEPARATOR = "~";
+
+/**
+ * Encode a pagination cursor as a single token.
+ *
+ * Clients must treat it as opaque — the encoding is an implementation detail
+ * that can change without breaking the contract. Deliberately built from plain
+ * string operations so the same code runs in Node and in the browser.
+ */
+export function encodeChatCursor(cursor: ChatCursor): string {
+  return `${cursor.updatedAt}${CURSOR_SEPARATOR}${cursor.id}`;
+}
+
+const cursorPartsSchema = z.object({
+  updatedAt: z.string().datetime(),
+  id: z.string().uuid(),
+});
+
+/** Decode a cursor token, returning `null` for anything malformed. */
+export function decodeChatCursor(token: string): ChatCursor | null {
+  const separator = token.indexOf(CURSOR_SEPARATOR);
+  if (separator <= 0) return null;
+
+  const parsed = cursorPartsSchema.safeParse({
+    updatedAt: token.slice(0, separator),
+    id: token.slice(separator + CURSOR_SEPARATOR.length),
+  });
+
+  return parsed.success ? parsed.data : null;
+}
+
 export const listChatsQuerySchema = z.object({
   limit: z.coerce
     .number()
@@ -177,8 +236,8 @@ export const listChatsQuerySchema = z.object({
     .min(1)
     .max(CHAT_LIMITS.maxHistoryPageSize)
     .default(CHAT_LIMITS.historyPageSize),
-  /** ISO timestamp of the last item on the previous page. */
-  cursor: z.string().datetime().optional(),
+  /** Opaque token from the previous page's `nextCursor`. */
+  cursor: z.string().min(1).max(256).optional(),
 });
 
 export type ListChatsQuery = z.infer<typeof listChatsQuerySchema>;

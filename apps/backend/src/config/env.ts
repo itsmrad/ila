@@ -141,6 +141,19 @@ const envSchema = z
     }
 
     if (
+      value.NODE_ENV === "production" &&
+      value.AI_API_KEY &&
+      value.AI_BASE_URL.startsWith("http://")
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["AI_BASE_URL"],
+        message:
+          "AI_BASE_URL must use https in production (the API key is sent as a bearer header)",
+      });
+    }
+
+    if (
       value.AI_ALLOWED_MODELS.length > 0 &&
       !value.AI_ALLOWED_MODELS.includes(value.AI_MODEL)
     ) {

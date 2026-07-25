@@ -302,9 +302,16 @@ function ChatApp({
     [setMessages, user.id],
   );
 
-  // Refresh the history list once a turn completes so titles/order stay current.
+  // Refresh the history list when a turn actually completes, so titles and
+  // ordering stay current. Keyed on the streaming → ready transition: `ready`
+  // is also the state on first mount, which is not a completed turn.
+  const previousStatus = useRef(status);
   useEffect(() => {
-    if (status === 'ready' && chatId) {
+    const wasStreaming =
+      previousStatus.current === 'streaming' ||
+      previousStatus.current === 'submitted';
+    previousStatus.current = status;
+    if (wasStreaming && status === 'ready' && chatId) {
       setHistoryRefresh((token) => token + 1);
     }
   }, [status, chatId]);

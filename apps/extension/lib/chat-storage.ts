@@ -19,8 +19,11 @@ const STORAGE_PREFIX = 'ila.chat.session.';
 /** Keep the stored payload small: recent turns only, text/reasoning only. */
 const MAX_STORED_MESSAGES = 40;
 
+/** Must match `storedMessageSchema.id`. */
+const MAX_STORED_ID_CHARS = 64;
+
 const storedMessageSchema = z.object({
-  id: z.string().min(1).max(64),
+  id: z.string().min(1).max(MAX_STORED_ID_CHARS),
   role: chatRoleSchema,
   parts: z.array(messagePartSchema).min(1).max(CHAT_LIMITS.maxPartsPerMessage),
 });
@@ -84,19 +87,30 @@ export async function saveChatSession(
       : [];
 
     if (parts.length === 0) continue;
-    messages.push({ id: message.id, role: role.data, parts });
+    messages.push({
+      // Clamp rather than drop: an over-long id would fail validation below and
+      // cost the user the entire cached transcript.
+      id: message.id.slice(0, MAX_STORED_ID_CHARS),
+      role: role.data,
+      parts,
+    });
   }
 
-  const payload: StoredSession = {
-    version: 1,
+  const payload = {
+    version: 1 as const,
     ...(session.chatId ? { chatId: session.chatId } : {}),
     ...(session.model ? { model: session.model } : {}),
     messages,
     savedAt: Date.now(),
   };
 
+  // Validate before writing so a payload that could not be read back is never
+  // persisted in the first place.
+  const validated = storedSessionSchema.safeParse(payload);
+  if (!validated.success) return;
+
   try {
-    await chrome.storage.local.set({ [keyFor(userId)]: payload });
+    await chrome.storage.local.set({ [keyFor(userId)]: validated.data });
   } catch {
     // Quota or extension-context errors must never break the chat UI.
   }
