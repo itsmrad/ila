@@ -1,17 +1,25 @@
+import { z } from "zod";
 import { BACKEND_URL } from "./config";
 
 /** chrome.storage.local key holding the Better Auth session token. */
 const TOKEN_KEY = "ila.session.token";
 
-export interface SessionUser {
-  id: string;
-  name: string;
-  email: string;
-  emailVerified: boolean;
-  image?: string | null;
-  username?: string | null;
-  displayUsername?: string | null;
-}
+/**
+ * Shape of the authenticated user as returned by `GET /api/session/me`.
+ * Validated at runtime: the response drives the storage key for the local chat
+ * cache, so it must never be trusted on the strength of a TypeScript cast.
+ */
+const sessionUserSchema = z.object({
+  id: z.string().min(1).max(128),
+  name: z.string().max(300),
+  email: z.string().max(320),
+  emailVerified: z.boolean(),
+  image: z.string().max(2_048).nullish(),
+  username: z.string().max(64).nullish(),
+  displayUsername: z.string().max(64).nullish(),
+});
+
+export type SessionUser = z.infer<typeof sessionUserSchema>;
 
 export async function getStoredToken(): Promise<string | null> {
   const result = await chrome.storage.local.get(TOKEN_KEY);
@@ -29,16 +37,21 @@ export async function clearStoredToken(): Promise<void> {
 
 /**
  * Fetch the current session/user from the backend using the bearer token.
- * Returns `null` for any non-OK response (expired/invalid token, network error).
+ * Returns `null` for any non-OK or unexpected response (expired/invalid token,
+ * network error, contract drift).
  */
 export async function fetchSession(token: string): Promise<SessionUser | null> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/session/me`, {
+      credentials: "omit",
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { user: SessionUser };
-    return data.user ?? null;
+    const body: unknown = await res.json();
+    const parsed = sessionUserSchema.safeParse(
+      (body as { user?: unknown } | null)?.user,
+    );
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
@@ -74,6 +87,7 @@ export async function launchLogin(): Promise<string> {
 export async function signOut(token: string): Promise<void> {
   const response = await fetch(`${BACKEND_URL}/api/auth/sign-out`, {
     method: "POST",
+    credentials: "omit",
     headers: { authorization: `Bearer ${token}` },
   });
   if (!response.ok) {

@@ -1,0 +1,10 @@
+{
+  "extends": "@ila/typescript-config/base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}

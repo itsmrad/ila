@@ -1,0 +1,23 @@
+{
+  "name": "@ila/shared",
+  "description": "Shared API contract (zod schemas + inferred types) for ILA services",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./chat": "./src/chat.ts"
+  },
+  "scripts": {
+    "compile": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@ila/typescript-config": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

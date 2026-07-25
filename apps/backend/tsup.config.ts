@@ -10,4 +10,7 @@ export default defineConfig({
   clean: true,
   // Bundle first-party code; keep node_modules external so native deps (pg) work.
   skipNodeModulesBundle: true,
+  // `@ila/shared` ships TypeScript source, so it must be compiled into the
+  // bundle rather than left as a runtime import.
+  noExternal: ["@ila/shared"],
 });

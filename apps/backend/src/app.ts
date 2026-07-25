@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { toNodeHandler } from "better-auth/node";
+import { CHAT_ID_HEADER } from "@ila/shared";
 import { auth } from "@/lib/auth";
 import { env } from "@/config/env";
 import { requestLogger } from "@/middleware/request-logger";
@@ -59,12 +60,26 @@ export function createApp(): Express {
       },
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      // The streaming chat endpoint returns the server-assigned conversation id
+      // in a header; it must be readable by the extension's fetch client.
+      exposedHeaders: [
+        CHAT_ID_HEADER,
+        "x-ratelimit-limit",
+        "x-ratelimit-remaining",
+        "retry-after",
+      ],
     }),
   );
 
   // Better Auth must be mounted BEFORE the JSON body parser, otherwise the
   // client API hangs. Express 4 wildcard syntax.
   app.all("/api/auth/*", toNodeHandler(auth));
+
+  // The largest valid chat request is ~64 KB (see CHAT_LIMITS); parse it with a
+  // tighter budget than the generic API so an oversized payload is rejected
+  // before it is fully buffered. Registered first — body-parser marks the
+  // request as parsed, so the generic parser below skips it.
+  app.use("/api/chat", express.json({ limit: "128kb" }));
 
   // JSON parsing for everything else.
   app.use(express.json({ limit: "1mb" }));
