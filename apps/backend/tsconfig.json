@@ -1,0 +1,19 @@
+{
+  "extends": "@ila/typescript-config/base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["node"],
+    "moduleResolution": "Bundler",
+    "module": "ESNext",
+    "target": "ESNext",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src", "drizzle.config.ts", "tsup.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}
