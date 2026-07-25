@@ -5,3 +5,4 @@
  * and drizzle-kit see the full set. Add future domain tables here.
  */
 export * from "@/db/auth.schema";
+export * from "@/db/chat.schema";

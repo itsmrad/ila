@@ -3,6 +3,7 @@ import { z } from "zod";
 import { route } from "@/lib/http";
 import { healthRouter } from "@/routes/health.route";
 import { sessionRouter } from "@/routes/session.route";
+import { chatRouter } from "@/routes/chat.route";
 
 /**
  * Placeholder router for planned domains. Returns a typed 501 so the API
@@ -41,6 +42,9 @@ export const apiRouter: Router = Router();
 // Operational
 apiRouter.use("/health", healthRouter);
 apiRouter.use("/session", sessionRouter);
+
+// Product surfaces
+apiRouter.use("/chat", chatRouter);
 
 // Planned product surfaces (extension automation, memory, user management).
 apiRouter.use("/users", plannedRouter("users"));

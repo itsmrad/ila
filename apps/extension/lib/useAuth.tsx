@@ -14,6 +14,7 @@ import {
   signOut as apiSignOut,
   type SessionUser,
 } from './auth';
+import { clearAllChatSessions } from './chat-storage';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -75,10 +76,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const token = await getStoredToken();
-    if (token) await apiSignOut(token);
-    setUser(null);
-    setError(null);
-    setStatus('unauthenticated');
+    try {
+      if (token) await apiSignOut(token);
+    } finally {
+      // Always drop local state, even if the revoke call failed: leaving a
+      // cached transcript behind after "sign out" would be worse.
+      await clearStoredToken();
+      await clearAllChatSessions();
+      setUser(null);
+      setError(null);
+      setStatus('unauthenticated');
+    }
   }, []);
 
   return (
