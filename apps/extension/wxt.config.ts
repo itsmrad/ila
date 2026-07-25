@@ -8,7 +8,7 @@ export default defineConfig({
     description: 'Your intelligent browser productivity assistant.',
     permissions: ['sidePanel', 'identity', 'storage'],
     // Needed so the extension can call the ILA backend API directly.
-    host_permissions: ['http://localhost:4000/*'],
+    host_permissions: ['http://localhost:3005/*'],
     action: { default_title: 'Open ILA' },
   },
   vite: () => ({ plugins: [tailwindcss()] }),
