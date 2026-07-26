@@ -11,6 +11,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "compile": "turbo run compile",
+    "test": "turbo run test",
     "lint": "turbo run lint",
     "extension:dev": "turbo run dev --filter=@ila/extension",
     "extension:build": "turbo run build --filter=@ila/extension"
