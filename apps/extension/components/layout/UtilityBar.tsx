@@ -9,6 +9,8 @@ interface UtilityBarProps {
   onClearConversation: () => void;
   /** Open the saved-conversation list. */
   onOpenHistory: () => void;
+  /** Open the settings drawer. */
+  onOpenSettings: () => void;
   /** Disables destructive actions while a response is streaming. */
   busy?: boolean;
   /** True when there is something on screen worth clearing. */
@@ -26,6 +28,7 @@ export function UtilityBar({
   onNewChat,
   onClearConversation,
   onOpenHistory,
+  onOpenSettings,
   busy = false,
   hasConversation = false,
   user,
@@ -49,7 +52,7 @@ export function UtilityBar({
         </IconButton>
       </div>
       <div className="flex items-center gap-2 md:gap-[17px]">
-        <IconButton label="Settings (coming soon)" disabled>
+        <IconButton label="Settings" onClick={onOpenSettings}>
           <Settings2 size={20} />
         </IconButton>
         {user && (
