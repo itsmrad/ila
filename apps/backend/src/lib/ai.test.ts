@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { CHAT_LIMITS } from "@ila/shared";
 import { buildSystemPrompt } from "@/lib/ai";
 
 test("omits the context block when nothing is shared", () => {
@@ -30,6 +31,33 @@ test("lists the selected tabs", () => {
   expect(prompt).toContain("open tabs:");
   expect(prompt).toContain("- One — https://one.example/");
   expect(prompt).toContain("- Two — https://two.example/");
+});
+
+test("drops tabs past the context budget and says how many were omitted", () => {
+  // 12 tabs (the schema cap) with maximum-length titles exceed
+  // CHAT_LIMITS.maxPageContextChars, so the tail must be summarised instead.
+  const tabs = Array.from({ length: 12 }, (_, index) => ({
+    title: `${index}`.repeat(300),
+    url: `https://tab-${index}.example/`,
+  }));
+
+  const prompt = buildSystemPrompt({
+    title: "Active",
+    url: "https://active.example/",
+    tabs,
+  });
+
+  const listed = prompt.match(/^- https?:|^- \d/gm) ?? [];
+  expect(listed.length).toBeLessThan(tabs.length);
+  expect(prompt).toContain(
+    `- (${tabs.length - listed.length} more tab(s) not shown)`,
+  );
+  // The whole block stays inside the budget.
+  const block = prompt.slice(
+    prompt.indexOf("<<<PAGE_CONTEXT"),
+    prompt.indexOf("PAGE_CONTEXT>>>"),
+  );
+  expect(block.length).toBeLessThanOrEqual(CHAT_LIMITS.maxPageContextChars + 200);
 });
 
 test("strips fence markers and control characters from untrusted values", () => {

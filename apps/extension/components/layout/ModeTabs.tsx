@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react';
 import { MessageSquare, Sparkles } from 'lucide-react';
 
 /**
@@ -31,13 +32,17 @@ export function ModeTabs({
   onModeChange: (mode: PanelMode) => void;
 }) {
   // Arrow keys move between tabs, which is what a tablist is expected to do.
-  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const index = TABS.findIndex((tab) => tab.mode === mode);
     const offset = event.key === 'ArrowRight' ? 1 : -1;
     const next = TABS[(index + offset + TABS.length) % TABS.length];
-    if (next) onModeChange(next.mode);
+    if (!next) return;
+    onModeChange(next.mode);
+    // Focus follows selection: the previously selected tab drops to tabIndex -1,
+    // so focus has to move with it or it lands on the container.
+    document.getElementById(`ila-tab-${next.mode}`)?.focus();
   };
 
   return (

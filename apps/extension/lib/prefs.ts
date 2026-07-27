@@ -24,8 +24,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
 export async function loadPreferences(): Promise<Preferences> {
   try {
     const stored = await chrome.storage.local.get(STORAGE_KEY);
-    const parsed = preferencesSchema.safeParse(stored[STORAGE_KEY]);
-    return parsed.success ? parsed.data : DEFAULT_PREFERENCES;
+    // Parsed as a partial so adding a preference later does not discard the ones
+    // a user has already set.
+    const parsed = preferencesSchema.partial().safeParse(stored[STORAGE_KEY]);
+    return parsed.success
+      ? { ...DEFAULT_PREFERENCES, ...parsed.data }
+      : DEFAULT_PREFERENCES;
   } catch {
     return DEFAULT_PREFERENCES;
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Check, CircleAlert, Play } from 'lucide-react';
 import {
   AUTOMATIONS,
@@ -23,6 +23,9 @@ interface RunState {
   message: string;
 }
 
+/** How long to wait for progress before assuming the worker is gone. */
+const RUN_TIMEOUT_MS = 15_000;
+
 export interface AutomationsPanelProps {
   mode: ContextMode;
   selectedTabs: BrowserTab[];
@@ -30,6 +33,27 @@ export interface AutomationsPanelProps {
 
 export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) {
   const [runs, setRuns] = useState<Partial<Record<AutomationId, RunState>>>({});
+  const [starting, setStarting] = useState<Partial<Record<AutomationId, boolean>>>(
+    {},
+  );
+  /** Watchdog timers, keyed by automation, cleared when a run finishes. */
+  const watchdogs = useRef(new Map<AutomationId, ReturnType<typeof setTimeout>>());
+
+  const settle = useCallback((automationId: AutomationId) => {
+    const timer = watchdogs.current.get(automationId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      watchdogs.current.delete(automationId);
+    }
+  }, []);
+
+  useEffect(() => {
+    const watchdogTimers = watchdogs.current;
+    return () => {
+      for (const timer of watchdogTimers.values()) clearTimeout(timer);
+      watchdogTimers.clear();
+    };
+  }, []);
 
   useEffect(
     () =>
@@ -47,31 +71,66 @@ export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) 
             },
           };
         });
+        if (progress.status !== 'running') settle(progress.automationId);
       }),
-    [],
+    [settle],
   );
 
   const run = async (automationId: AutomationId) => {
-    const response = await startAutomation({
-      automationId,
-      mode,
-      tabs: selectedTabs,
-    });
+    // Marked before the await so a second click cannot start a parallel run and
+    // clobber the first run's progress tracking.
+    if (starting[automationId]) return;
+    setStarting((current) => ({ ...current, [automationId]: true }));
 
-    setRuns((current) => ({
-      ...current,
-      [automationId]: response.accepted
-        ? {
-            runId: response.runId,
-            status: 'running',
-            message: response.message ?? 'Starting…',
-          }
-        : {
-            runId: response.runId,
-            status: 'error',
-            message: response.message ?? 'Could not start that automation.',
-          },
-    }));
+    try {
+      const response = await startAutomation({
+        automationId,
+        mode,
+        tabs: selectedTabs,
+      });
+
+      setRuns((current) => ({
+        ...current,
+        [automationId]: response.accepted
+          ? {
+              runId: response.runId,
+              status: 'running',
+              message: response.message ?? 'Starting…',
+            }
+          : {
+              runId: response.runId,
+              status: 'error',
+              message: response.message ?? 'Could not start that automation.',
+            },
+      }));
+
+      settle(automationId);
+      if (!response.accepted) return;
+
+      // The service worker can be suspended mid-run, in which case no further
+      // progress arrives. Fail visibly instead of spinning forever.
+      watchdogs.current.set(
+        automationId,
+        setTimeout(() => {
+          watchdogs.current.delete(automationId);
+          setRuns((current) => {
+            const existing = current[automationId];
+            if (existing?.runId !== response.runId) return current;
+            if (existing.status !== 'running') return current;
+            return {
+              ...current,
+              [automationId]: {
+                runId: response.runId,
+                status: 'error',
+                message: 'The background worker stopped responding.',
+              },
+            };
+          });
+        }, RUN_TIMEOUT_MS),
+      );
+    } finally {
+      setStarting((current) => ({ ...current, [automationId]: false }));
+    }
   };
 
   return (
@@ -85,6 +144,7 @@ export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) 
       <ul className="flex flex-col gap-2">
         {AUTOMATIONS.map((automation) => {
           const state = runs[automation.id];
+          const busy = starting[automation.id] === true || state?.status === 'running';
           return (
             <li
               key={automation.id}
@@ -102,10 +162,10 @@ export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) 
                 <button
                   type="button"
                   onClick={() => void run(automation.id)}
-                  disabled={!automation.available || state?.status === 'running'}
+                  disabled={!automation.available || busy}
                   className="flex shrink-0 items-center gap-1.5 rounded-[12px] bg-[#aebcf0] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#97a8e8] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
                 >
-                  {state?.status === 'running' ? (
+                  {busy ? (
                     <Loader2 size={13} className="animate-spin" aria-hidden="true" />
                   ) : (
                     <Play size={13} aria-hidden="true" />

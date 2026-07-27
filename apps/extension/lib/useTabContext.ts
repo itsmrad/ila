@@ -41,7 +41,8 @@ export function useTabContext(userId: string): TabContextState {
   const [loaded, setLoaded] = useState(false);
   const [mode, setMode] = useState<ContextMode>('current');
   const [customTabIds, setCustomTabIds] = useState<number[]>([]);
-  const restored = useRef(false);
+  const [restored, setRestored] = useState(false);
+  const restoreStarted = useRef(false);
 
   const refresh = useCallback(() => {
     void queryWindowTabs().then((next) => {
@@ -82,8 +83,8 @@ export function useTabContext(userId: string): TabContextState {
   // Runs once the first tab list is in: a stored custom selection can only be
   // re-resolved against tabs that actually exist now.
   useEffect(() => {
-    if (!loaded || restored.current) return;
-    restored.current = true;
+    if (!loaded || restoreStarted.current) return;
+    restoreStarted.current = true;
 
     let cancelled = false;
     void (async () => {
@@ -95,12 +96,15 @@ export function useTabContext(userId: string): TabContextState {
 
       if (!stored) {
         setMode(preferences.attachContextByDefault ? 'current' : 'none');
-        return;
+      } else {
+        setMode(stored.mode);
+        if (stored.mode === 'custom') {
+          setCustomTabIds(resolveStoredTabs(stored.tabs, tabs));
+        }
       }
-      setMode(stored.mode);
-      if (stored.mode === 'custom') {
-        setCustomTabIds(resolveStoredTabs(stored.tabs, tabs));
-      }
+      // Only now may the persistence effect write: flipping this earlier would
+      // let the default mode overwrite the selection still being read.
+      setRestored(true);
     })();
 
     return () => {
@@ -136,9 +140,9 @@ export function useTabContext(userId: string): TabContextState {
   }, [mode, tabs, activeTab, customTabIds]);
 
   useEffect(() => {
-    if (!restored.current) return;
+    if (!restored) return;
     void saveSelection(userId, { mode, tabs: selectedTabs });
-  }, [userId, mode, selectedTabs]);
+  }, [restored, userId, mode, selectedTabs]);
 
   const toggleTab = useCallback((tabId: number) => {
     setCustomTabIds((current) =>

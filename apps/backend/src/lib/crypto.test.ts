@@ -45,3 +45,8 @@ test("rejects a tampered auth tag", () => {
 test("rejects an unrecognised record format", () => {
   expect(() => decryptSecret("v2.aaa.bbb.ccc", AAD)).toThrow();
 });
+
+test("rejects a valid record with an appended segment", () => {
+  const record = encryptSecret(SECRET, AAD);
+  expect(() => decryptSecret(`${record}.extra`, AAD)).toThrow();
+});

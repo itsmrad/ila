@@ -105,7 +105,12 @@ async function assertLoginPageReachable(
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(url, { credentials: "omit" });
+    // A hung connection (a backend that accepts but never answers) must not leave
+    // the button spinning; a timeout abort lands in the same branch as a refusal.
+    response = await fetch(url, {
+      credentials: "omit",
+      signal: AbortSignal.timeout(5_000),
+    });
   } catch {
     throw new Error(
       `Could not reach the ILA backend at ${BACKEND_URL}. Is it running?`,

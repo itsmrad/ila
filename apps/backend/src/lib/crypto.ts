@@ -68,13 +68,20 @@ export function encryptSecret(plaintext: string, aad: string): string {
 /**
  * Decrypt a value produced by {@link encryptSecret}.
  *
- * Throws on any tampering (wrong AAD, altered ciphertext, truncated record):
- * GCM authentication failure is not recoverable and must never be downgraded to
- * "return the bytes anyway".
+ * Throws on any tampering (wrong AAD, altered ciphertext, truncated or extended
+ * record): GCM authentication failure is not recoverable and must never be
+ * downgraded to "return the bytes anyway".
  */
 export function decryptSecret(record: string, aad: string): string {
-  const [version, ivPart, tagPart, dataPart] = record.split(".");
-  if (version !== VERSION || !ivPart || !tagPart || !dataPart) {
+  const segments = record.split(".");
+  const [version, ivPart, tagPart, dataPart] = segments;
+  if (
+    segments.length !== 4 ||
+    version !== VERSION ||
+    !ivPart ||
+    !tagPart ||
+    !dataPart
+  ) {
     throw new Error("Unrecognised secret record format");
   }
 

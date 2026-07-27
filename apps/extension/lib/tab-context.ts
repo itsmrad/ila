@@ -23,7 +23,9 @@ export interface BrowserTab {
 }
 
 /** What the assistant is allowed to see. */
-export type ContextMode = 'none' | 'current' | 'window' | 'custom';
+export const CONTEXT_MODES = ['none', 'current', 'window', 'custom'] as const;
+
+export type ContextMode = (typeof CONTEXT_MODES)[number];
 
 /** Longest URL the API contract accepts (`pageContextSchema`). */
 const MAX_URL_CHARS = 2_048;
@@ -89,7 +91,7 @@ const STORAGE_PREFIX = 'ila.context.selection.';
  */
 const storedSelectionSchema = z.object({
   version: z.literal(1),
-  mode: z.enum(['none', 'current', 'window', 'custom']),
+  mode: z.enum(CONTEXT_MODES),
   tabs: z
     .array(
       z.object({

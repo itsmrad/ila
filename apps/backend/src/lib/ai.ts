@@ -97,12 +97,21 @@ const BASE_SYSTEM_PROMPT = [
  * reference data that must never be treated as instructions.
  */
 export function buildSystemPrompt(pageContext?: PageContext): string {
-  const activePage = [
+  // One budget for the whole block: the active page and the tab list compete for
+  // the same space, so pathological titles cannot crowd out the conversation.
+  let budget = CHAT_LIMITS.maxPageContextChars;
+
+  const activePage: string[] = [];
+  for (const line of [
     pageContext?.title ? `title: ${sanitiseContextValue(pageContext.title)}` : null,
     pageContext?.url ? `url: ${sanitiseContextValue(pageContext.url)}` : null,
-  ].filter((line): line is string => line !== null);
+  ]) {
+    if (line === null || line.length > budget) continue;
+    budget -= line.length;
+    activePage.push(line);
+  }
 
-  const tabs = formatTabLines(pageContext?.tabs);
+  const tabs = formatTabLines(pageContext?.tabs, budget);
 
   if (activePage.length === 0 && tabs.length === 0) return BASE_SYSTEM_PROMPT;
 
@@ -122,22 +131,20 @@ export function buildSystemPrompt(pageContext?: PageContext): string {
 }
 
 /**
- * Render the selected tabs as one line each, stopping at the character budget.
- *
- * The schema already caps the number of tabs; this also caps their total size so
- * a set of pathological titles cannot crowd out the conversation itself.
+ * Render the selected tabs as one line each, stopping at the remaining
+ * character budget. The schema already caps how many tabs may arrive.
  */
-function formatTabLines(tabs: PageContext["tabs"]): string[] {
+function formatTabLines(tabs: PageContext["tabs"], budget: number): string[] {
   if (!tabs || tabs.length === 0) return [];
 
   const lines: string[] = [];
-  let budget = CHAT_LIMITS.maxPageContextChars;
+  let remaining = budget;
 
   for (const tab of tabs) {
     const title = tab.title ? sanitiseContextValue(tab.title) : "";
     const line = `- ${title ? `${title} — ` : ""}${sanitiseContextValue(tab.url)}`;
-    if (line.length > budget) break;
-    budget -= line.length;
+    if (line.length > remaining) break;
+    remaining -= line.length;
     lines.push(line);
   }
 

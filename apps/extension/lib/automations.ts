@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CHAT_LIMITS } from '@ila/shared';
-import type { BrowserTab, ContextMode } from './tab-context';
+import { CONTEXT_MODES, type BrowserTab, type ContextMode } from './tab-context';
 
 /**
  * Automations: the catalogue shown in the side panel and the message contract
@@ -69,7 +69,7 @@ export const automationStartMessageSchema = z.object({
   runId: z.string().min(1).max(64),
   automationId: automationIdSchema,
   context: z.object({
-    mode: z.enum(['none', 'current', 'window', 'custom']),
+    mode: z.enum(CONTEXT_MODES),
     tabs: z.array(tabRefSchema).max(CHAT_LIMITS.maxContextTabs),
   }),
 });

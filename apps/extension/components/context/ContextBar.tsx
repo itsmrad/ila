@@ -50,14 +50,28 @@ export function ContextBar({
   unavailable,
 }: ContextBarProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  // Closing on any mousedown outside the whole bar — not just outside the list —
+  // is what lets the "Select" pill toggle the list instead of reopening it.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setPickerOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [pickerOpen]);
 
   const select = (next: ContextMode) => {
     onModeChange(next);
-    setPickerOpen(next === 'custom');
+    // Clicking the already-active "Select" pill closes the list again; the
+    // chevron implies a toggle.
+    setPickerOpen(next === 'custom' ? mode !== 'custom' || !pickerOpen : false);
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div ref={root} className="flex flex-col gap-1.5">
       {pickerOpen && mode === 'custom' && (
         <TabPicker
           tabs={tabs}
@@ -144,28 +158,18 @@ function TabPicker({
   onToggleTab: (tabId: number) => void;
   onClose: () => void;
 }) {
-  const container = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
-    const onPointerDown = (event: MouseEvent) => {
-      if (!container.current?.contains(event.target as Node)) onClose();
-    };
     document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('mousedown', onPointerDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('mousedown', onPointerDown);
-    };
+    return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
   const atLimit = customTabIds.length >= CHAT_LIMITS.maxContextTabs;
 
   return (
     <div
-      ref={container}
       className="max-h-[220px] overflow-auto rounded-[16px] border border-[#e8e8e8] bg-white p-1.5 shadow-[0_10px_30px_#00000014] scrollbar-thin"
     >
       {tabs.length === 0 ? (
