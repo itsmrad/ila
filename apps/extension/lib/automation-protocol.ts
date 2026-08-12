@@ -7,6 +7,7 @@ export const MAX_TARGET_LENGTH = 240;
 export const MAX_TYPE_TEXT_LENGTH = 50_000;
 export const MAX_EXTRACT_LENGTH = 100_000;
 export const MAX_SCROLL_DELTA = 100_000;
+export const MAX_UPLOAD_DATA_URL_LENGTH = 14_000_000;
 
 export type NavigateAction = {
   kind: 'navigate';
@@ -64,6 +65,17 @@ export type CheckAction = {
   checked?: boolean;
 };
 
+export type UploadAction = {
+  kind: 'upload';
+  selector: string;
+  target?: string;
+  file: {
+    name: string;
+    mimeType: string;
+    dataUrl: string;
+  };
+};
+
 export type ScrollAction = {
   kind: 'scroll';
   selector?: string;
@@ -85,6 +97,7 @@ export type PageAutomationAction =
   | TypeAction
   | SelectAction
   | CheckAction
+  | UploadAction
   | ScrollAction
   | ExtractAction;
 
@@ -109,6 +122,7 @@ export type AutomationExecuteRequest = {
   requestId: string;
   scope: 'activeTab';
   action: AutomationAction;
+  expectedUrl?: string;
   confirmation?: {
     approved: boolean;
   };
@@ -345,6 +359,42 @@ export function validateAutomationAction(value: unknown): AutomationAction {
         ...(checked === undefined ? {} : { checked }),
       };
     }
+    case 'upload': {
+      if (!isRecord(value.file)) {
+        throw new AutomationValidationError('upload.file is required');
+      }
+      const name = requiredString(value.file.name, 'file.name', 255).trim();
+      if (!name || /[\\/]/.test(name)) {
+        throw new AutomationValidationError('file.name must be a plain filename');
+      }
+      const mimeType = requiredString(value.file.mimeType, 'file.mimeType', 120)
+        .trim()
+        .toLowerCase();
+      if (!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(mimeType)) {
+        throw new AutomationValidationError('file.mimeType is invalid');
+      }
+      const dataUrl = requiredString(
+        value.file.dataUrl,
+        'file.dataUrl',
+        MAX_UPLOAD_DATA_URL_LENGTH,
+      );
+      const encodedType = dataUrl.slice(5, dataUrl.indexOf(';')).toLowerCase();
+      if (
+        !dataUrl.startsWith('data:') ||
+        !dataUrl.includes(';base64,') ||
+        encodedType !== mimeType ||
+        !/^[A-Za-z0-9+/]*={0,2}$/.test(dataUrl.slice(dataUrl.indexOf(',') + 1))
+      ) {
+        throw new AutomationValidationError('file.dataUrl must match file.mimeType');
+      }
+      const target = validateTarget(value.target);
+      return {
+        kind: 'upload',
+        selector: validateSelector(value.selector),
+        ...(target ? { target } : {}),
+        file: { name, mimeType, dataUrl },
+      };
+    }
     case 'scroll': {
       const deltaX =
         optionalFiniteNumber(
@@ -444,6 +494,7 @@ export function isPageAutomationAction(
     action.kind === 'type' ||
     action.kind === 'select' ||
     action.kind === 'check' ||
+    action.kind === 'upload' ||
     action.kind === 'scroll' ||
     action.kind === 'extract'
   );
@@ -467,6 +518,11 @@ export function confirmationPolicyForAction(
       return {
         required: true,
         reason: 'Changing a form control modifies page state.',
+      };
+    case 'upload':
+      return {
+        required: true,
+        reason: 'Uploading shares the selected local file with this website.',
       };
     case 'click':
       return {
@@ -495,6 +551,9 @@ export function validateAutomationRequest(
     throw new AutomationValidationError('scope must be activeTab');
   }
   const action = validateAutomationAction(value.action);
+  const expectedUrl = value.expectedUrl === undefined
+    ? undefined
+    : normalizeHttpUrl(value.expectedUrl, 'expectedUrl');
   let confirmation: AutomationExecuteRequest['confirmation'];
   if (value.confirmation !== undefined) {
     if (
@@ -512,6 +571,7 @@ export function validateAutomationRequest(
     requestId,
     scope: 'activeTab',
     action,
+    ...(expectedUrl ? { expectedUrl } : {}),
     ...(confirmation ? { confirmation } : {}),
   };
 }

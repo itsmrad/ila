@@ -10,6 +10,12 @@ export const AGENT_LIMITS = {
   maxMemoryItems: 20,
   maxMemoryChars: 1_000,
   maxExecutionRecords: 20,
+  maxAttachments: 5,
+  maxAttachmentBytes: 10 * 1024 * 1024,
+  maxAttachmentPayloadChars: 14_000_000,
+  maxAttachmentContextChars: 6_000,
+  maxHumanInputQuestions: 5,
+  maxHumanInputResponses: 20,
 } as const;
 
 const selectorSchema = z.string().trim().min(1).max(AGENT_LIMITS.maxSelectorChars);
@@ -58,6 +64,12 @@ export const browserActionSchema = z.discriminatedUnion("type", [
     checked: z.boolean().default(true),
   }),
   z.object({
+    type: z.literal("upload"),
+    selector: selectorSchema,
+    target: targetSchema.optional(),
+    attachmentId: z.string().trim().min(1).max(64),
+  }),
+  z.object({
     type: z.literal("scroll"),
     direction: z.enum(["up", "down"]),
     amount: z.number().int().min(100).max(5_000).default(700),
@@ -90,6 +102,99 @@ export const agentPlanSchema = z.object({
 
 export type AgentPlan = z.infer<typeof agentPlanSchema>;
 
+export const agentAttachmentMetadataSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  name: z.string().trim().min(1).max(255),
+  mediaType: z.string().trim().min(1).max(120),
+  size: z.number().int().min(1).max(AGENT_LIMITS.maxAttachmentBytes),
+});
+export type AgentAttachmentMetadata = z.infer<typeof agentAttachmentMetadataSchema>;
+
+export const agentAttachmentSchema = agentAttachmentMetadataSchema.extend({
+  dataUrl: z.string()
+    .max(AGENT_LIMITS.maxAttachmentPayloadChars)
+    .refine(
+      (value) => /^data:[^;,]+;base64,[A-Za-z0-9+/]*={0,2}$/i.test(value),
+      "attachment must be a base64 data URL",
+    ),
+});
+export type AgentAttachment = z.infer<typeof agentAttachmentSchema>;
+
+const humanInputQuestionBaseSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  prompt: z.string().trim().min(1).max(500),
+  required: z.boolean().default(true),
+  placeholder: z.string().trim().min(1).max(160).optional(),
+});
+
+export const humanInputQuestionSchema = z.discriminatedUnion("type", [
+  humanInputQuestionBaseSchema.extend({ type: z.literal("text") }),
+  humanInputQuestionBaseSchema.extend({
+    type: z.literal("single_choice"),
+    options: z.array(z.string().trim().min(1).max(160)).min(2).max(8),
+  }),
+  humanInputQuestionBaseSchema.extend({
+    type: z.literal("multiple_choice"),
+    options: z.array(z.string().trim().min(1).max(160)).min(2).max(8),
+  }),
+  humanInputQuestionBaseSchema.extend({
+    type: z.literal("file"),
+    accept: z.array(z.string().trim().min(1).max(120)).max(12).optional(),
+  }),
+  humanInputQuestionBaseSchema.extend({ type: z.literal("manual") }),
+]);
+export type HumanInputQuestion = z.infer<typeof humanInputQuestionSchema>;
+
+export const humanInputRequestSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  description: z.string().trim().min(1).max(500).optional(),
+  questions: z
+    .array(humanInputQuestionSchema)
+    .min(1)
+    .max(AGENT_LIMITS.maxHumanInputQuestions),
+}).superRefine((value, ctx) => {
+  const ids = new Set<string>();
+  value.questions.forEach((question, questionIndex) => {
+    if (ids.has(question.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["questions", questionIndex, "id"],
+        message: "question ids must be unique",
+      });
+    }
+    ids.add(question.id);
+    if (question.type === "single_choice" || question.type === "multiple_choice") {
+      if (new Set(question.options).size !== question.options.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["questions", questionIndex, "options"],
+          message: "question options must be unique",
+        });
+      }
+    }
+  });
+});
+export type HumanInputRequest = z.infer<typeof humanInputRequestSchema>;
+
+export const humanInputResponseSchema = z.object({
+  questionId: z.string().trim().min(1).max(64),
+  prompt: z.string().trim().min(1).max(500),
+  values: z.array(z.string().trim().min(1).max(1_000)).max(9).default([]),
+  attachmentIds: z.array(z.string().trim().min(1).max(64)).max(AGENT_LIMITS.maxAttachments).optional(),
+  acknowledged: z.boolean().optional(),
+});
+export type HumanInputResponse = z.infer<typeof humanInputResponseSchema>;
+
+export const agentAttachmentContextRequestSchema = z.object({
+  attachments: z.array(agentAttachmentSchema).min(1).max(AGENT_LIMITS.maxAttachments),
+}).superRefine((value, ctx) => validateAttachmentPayload(value, ctx));
+
+export const agentAttachmentContextResponseSchema = z.object({
+  attachmentContext: z.string().max(AGENT_LIMITS.maxAttachmentContextChars),
+});
+export type AgentAttachmentContextRequest = z.infer<typeof agentAttachmentContextRequestSchema>;
+export type AgentAttachmentContextResponse = z.infer<typeof agentAttachmentContextResponseSchema>;
+
 export const memoryContextItemSchema = z.object({
   title: z.string().max(300),
   url: webUrlSchema,
@@ -97,20 +202,52 @@ export const memoryContextItemSchema = z.object({
 });
 export type MemoryContextItem = z.infer<typeof memoryContextItemSchema>;
 
-export const agentPlanRequestSchema = z.object({
+const agentPlanRequestBaseSchema = z.object({
   task: z.string().trim().min(1).max(AGENT_LIMITS.maxTaskChars),
   model: z.string().min(1).max(120).optional(),
   pageContext: pageContextSchema.optional(),
   /** Bounded current-page markup, treated as untrusted data by the planner. */
   pageSnapshot: z.string().max(12_000).optional(),
   memory: z.array(memoryContextItemSchema).max(AGENT_LIMITS.maxMemoryItems).optional(),
+  attachments: z.array(agentAttachmentSchema).max(AGENT_LIMITS.maxAttachments).optional(),
+  attachmentMetadata: z.array(agentAttachmentMetadataSchema).max(AGENT_LIMITS.maxAttachments).optional(),
+  attachmentContext: z.string().max(AGENT_LIMITS.maxAttachmentContextChars).optional(),
+  humanInputResponses: z
+    .array(humanInputResponseSchema)
+    .max(AGENT_LIMITS.maxHumanInputResponses)
+    .optional(),
   reasoning: z.boolean().default(false),
 });
+
+function validateAttachmentPayload(
+  value: { attachments?: AgentAttachment[] },
+  ctx: z.RefinementCtx,
+): void {
+  const payloadChars = value.attachments?.reduce(
+    (total, attachment) => total + attachment.dataUrl.length,
+    0,
+  ) ?? 0;
+  if (payloadChars > AGENT_LIMITS.maxAttachmentPayloadChars) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.too_big,
+      type: "array",
+      maximum: AGENT_LIMITS.maxAttachmentPayloadChars,
+      inclusive: true,
+      path: ["attachments"],
+      message: "Combined attachment payload is too large",
+    });
+  }
+}
+
+export const agentPlanRequestSchema = agentPlanRequestBaseSchema.superRefine(
+  validateAttachmentPayload,
+);
 
 export type AgentPlanRequest = z.infer<typeof agentPlanRequestSchema>;
 
 export const agentPlanResponseSchema = z.object({
   plan: agentPlanSchema,
+  attachmentContext: z.string().max(AGENT_LIMITS.maxAttachmentContextChars).optional(),
 });
 
 export type AgentPlanResponse = z.infer<typeof agentPlanResponseSchema>;
@@ -124,12 +261,12 @@ export const agentExecutionRecordSchema = z.object({
 
 export type AgentExecutionRecord = z.infer<typeof agentExecutionRecordSchema>;
 
-export const agentNextRequestSchema = agentPlanRequestSchema.extend({
+export const agentNextRequestSchema = agentPlanRequestBaseSchema.extend({
   execution: z
     .array(agentExecutionRecordSchema)
     .max(AGENT_LIMITS.maxExecutionRecords)
     .default([]),
-});
+}).superRefine(validateAttachmentPayload);
 
 export type AgentNextRequest = z.infer<typeof agentNextRequestSchema>;
 
@@ -145,6 +282,10 @@ export const agentDecisionSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("blocked"),
     summary: z.string().trim().min(1).max(500),
+  }),
+  z.object({
+    status: z.literal("needs_input"),
+    request: humanInputRequestSchema,
   }),
 ]);
 
@@ -164,6 +305,7 @@ export function actionRequiresConfirmation(action: BrowserAction): boolean {
     action.type === "click" ||
     action.type === "type" ||
     action.type === "select" ||
-    action.type === "check"
+    action.type === "check" ||
+    action.type === "upload"
   );
 }

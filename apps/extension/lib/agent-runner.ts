@@ -6,7 +6,17 @@ import {
   type AutomationResponse,
 } from './automation-protocol';
 
-export function toAutomationAction(action: BrowserAction): AutomationAction | null {
+export interface AgentFileAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+}
+
+export function toAutomationAction(
+  action: BrowserAction,
+  attachments: readonly AgentFileAttachment[] = [],
+): AutomationAction | null {
   switch (action.type) {
     case 'navigate':
       return { kind: 'navigate', url: action.url };
@@ -48,6 +58,22 @@ export function toAutomationAction(action: BrowserAction): AutomationAction | nu
         ...(action.target ? { target: action.target } : {}),
         checked: action.checked,
       };
+    case 'upload': {
+      const attachment = attachments.find(({ id }) => id === action.attachmentId);
+      if (!attachment) {
+        throw new Error('The selected attachment is no longer available. Attach it again and retry.');
+      }
+      return {
+        kind: 'upload',
+        selector: action.selector,
+        ...(action.target ? { target: action.target } : {}),
+        file: {
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          dataUrl: attachment.dataUrl,
+        },
+      };
+    }
     case 'scroll':
       return {
         kind: 'scroll',
@@ -66,13 +92,15 @@ export function toAutomationAction(action: BrowserAction): AutomationAction | nu
 export async function executeAgentAction(
   action: BrowserAction,
   approved: boolean,
+  attachments: readonly AgentFileAttachment[] = [],
+  expectedUrl?: string,
 ): Promise<AutomationResponse | undefined> {
   if (action.type === 'wait') {
     await new Promise((resolve) => window.setTimeout(resolve, action.milliseconds));
     return undefined;
   }
 
-  const mapped = toAutomationAction(action);
+  const mapped = toAutomationAction(action, attachments);
   if (!mapped) return undefined;
   const requestId = globalThis.crypto?.randomUUID?.() ?? `agent-${Date.now()}`;
   return browser.runtime.sendMessage({
@@ -80,6 +108,7 @@ export async function executeAgentAction(
     requestId,
     scope: 'activeTab',
     action: mapped,
+    ...(expectedUrl ? { expectedUrl } : {}),
     confirmation: { approved },
   }) as Promise<AutomationResponse>;
 }

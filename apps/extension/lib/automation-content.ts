@@ -22,10 +22,23 @@ export class PageActionError extends Error {
   }
 }
 
-type InteractionIntent = 'click' | 'type' | 'select' | 'check';
+type InteractionIntent = 'click' | 'type' | 'select' | 'check' | 'upload';
 
 const INTERACTION_READY_TIMEOUT_MS = 5_000;
 const INTERACTION_RETRY_INTERVAL_MS = 100;
+const CLICKABLE_SELECTOR = [
+  'a[href]',
+  'button',
+  'input[type="button"]',
+  'input[type="submit"]',
+  'input[type="reset"]',
+  'summary',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="tab"]',
+  '[onclick]',
+].join(',');
 
 const GENERIC_TARGET_WORDS = new Set([
   'a',
@@ -102,7 +115,13 @@ export function scoreSemanticTarget(target: string, descriptions: string[]): num
 
 export function requestedOrdinal(target: string): 'first' | 'last' | undefined {
   const words = normalizeWords(target);
-  if (words.includes('first') || words.includes('top')) return 'first';
+  if (
+    words.includes('first') ||
+    words.includes('top') ||
+    words.includes('latest') ||
+    words.includes('newest') ||
+    /\bmost\s+recent\b/i.test(target)
+  ) return 'first';
   if (words.includes('last') || words.includes('bottom')) return 'last';
   return undefined;
 }
@@ -152,23 +171,39 @@ function isCheckableElement(element: Element): element is HTMLInputElement {
   );
 }
 
+function isUploadElement(element: Element): element is HTMLInputElement {
+  // File inputs are commonly visually hidden behind a styled label, so hidden
+  // state is not grounds for rejection. They must still be enabled and exact.
+  return element instanceof HTMLInputElement && element.type === 'file' && !element.disabled;
+}
+
 function isClickableElement(element: Element): element is HTMLElement {
   if (!(element instanceof HTMLElement) || isElementDisabled(element) || isHidden(element)) {
     return false;
   }
-  return element.matches([
-    'a[href]',
-    'button',
-    'input[type="button"]',
-    'input[type="submit"]',
-    'input[type="reset"]',
-    'summary',
-    '[role="button"]',
-    '[role="link"]',
-    '[role="menuitem"]',
-    '[role="tab"]',
-    '[onclick]',
-  ].join(','));
+  return element.matches(CLICKABLE_SELECTOR);
+}
+
+/** Resolve visible label nodes (common on YouTube) to the control that owns them. */
+function closestClickableElement(element: Element): HTMLElement | undefined {
+  let current: Element | null = element;
+  for (let depth = 0; current && depth < 12; depth += 1) {
+    if (isClickableElement(current)) return current;
+    const root = current.getRootNode();
+    current = current.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+  }
+  return undefined;
+}
+
+function eligibleElement(
+  element: Element,
+  intent: InteractionIntent,
+): HTMLElement | undefined {
+  if (intent === 'type') return isEditableElement(element) ? element : undefined;
+  if (intent === 'select') return isSelectableElement(element) ? element : undefined;
+  if (intent === 'check') return isCheckableElement(element) ? element : undefined;
+  if (intent === 'upload') return isUploadElement(element) ? element : undefined;
+  return closestClickableElement(element);
 }
 
 function accessibleDescriptions(element: HTMLElement): string[] {
@@ -179,6 +214,7 @@ function accessibleDescriptions(element: HTMLElement): string[] {
     element.id,
     element.getAttribute('title'),
     element.getAttribute('role'),
+    element.getAttribute('href'),
     element instanceof HTMLInputElement ? element.value : null,
     element.innerText || element.textContent,
   ];
@@ -203,27 +239,33 @@ function findSemanticElement(
       ? 'select'
       : intent === 'check'
         ? 'input[type="checkbox"],input[type="radio"]'
-        : 'a[href],button,input[type="button"],input[type="submit"],input[type="reset"],summary,[role="button"],[role="link"],[role="menuitem"],[role="tab"],[onclick]';
+        : intent === 'upload'
+          ? 'input[type="file"]'
+        : CLICKABLE_SELECTOR;
   const available = candidates ?? queryElements(document, candidateSelector);
-  const ranked = available
-    .filter((element) =>
-      intent === 'type'
-        ? isEditableElement(element)
-        : intent === 'select'
-          ? isSelectableElement(element)
-          : intent === 'check'
-            ? isCheckableElement(element)
-            : isClickableElement(element),
-    )
+  const eligible = Array.from(new Set(available.flatMap((element) => {
+    const resolved = eligibleElement(element, intent);
+    return resolved ? [resolved] : [];
+  })));
+  const ranked = eligible
     .map((element) => ({
       element,
-      score: scoreSemanticTarget(target, accessibleDescriptions(element as HTMLElement)),
+      score: scoreSemanticTarget(target, accessibleDescriptions(element)),
     }))
     .filter(({ score }) => score >= 40)
     .sort((left, right) => right.score - left.score);
 
   if (ranked.length === 0) return undefined;
-  if (ranked.length > 1 && ranked[0]!.score === ranked[1]!.score) {
+  const top = ranked.filter((candidate) => candidate.score === ranked[0]!.score);
+  if (top.length > 1) {
+    // Repeated responsive/header links can point to the exact same place. In
+    // that case choosing the first visible instance is deterministic and safe.
+    const destinations = top.map(({ element }) =>
+      element instanceof HTMLAnchorElement ? element.href : null,
+    );
+    if (destinations.every(Boolean) && new Set(destinations).size === 1) {
+      return top[0]!.element;
+    }
     throw new PageActionError(
       'AMBIGUOUS_SELECTOR',
       `More than one control matches “${target}”`,
@@ -244,28 +286,36 @@ export function querySingleElement(
   } catch (error) {
     if (!target || !intent) throw error;
   }
-  if (elements.length === 1) return elements[0]!;
+  if (elements.length === 1) {
+    if (!intent) return elements[0]!;
+    const eligible = eligibleElement(elements[0]!, intent);
+    if (eligible) return eligible;
+    if (target) {
+      const semantic = findSemanticElement(document, target, intent);
+      if (semantic) return semantic;
+    }
+    return elements[0]!;
+  }
   if (target && intent) {
     const ordinal = requestedOrdinal(target);
-    const eligible = elements.filter((element) =>
-      intent === 'type'
-        ? isEditableElement(element)
-        : intent === 'select'
-          ? isSelectableElement(element)
-          : intent === 'check'
-            ? isCheckableElement(element)
-            : isClickableElement(element),
-    );
+    const eligible = Array.from(new Set(elements.flatMap((element) => {
+      const resolved = eligibleElement(element, intent);
+      return resolved ? [resolved] : [];
+    })));
     if (ordinal && eligible.length > 0) {
       return ordinal === 'first' ? eligible[0]! : eligible[eligible.length - 1]!;
     }
-    const semantic = findSemanticElement(
+    const scopedSemantic = findSemanticElement(
       document,
       target,
       intent,
       elements.length > 1 ? elements : undefined,
     );
-    if (semantic) return semantic;
+    if (scopedSemantic) return scopedSemantic;
+    if (elements.length > 1) {
+      const pageSemantic = findSemanticElement(document, target, intent);
+      if (pageSemantic) return pageSemantic;
+    }
   }
   if (elements.length === 0) {
     throw new PageActionError(
@@ -399,6 +449,61 @@ function typeIntoElement(
   }
 }
 
+export function fileMatchesAccept(
+  name: string,
+  mimeType: string,
+  accept: string,
+): boolean {
+  const rules = accept.split(',').map((rule) => rule.trim().toLowerCase()).filter(Boolean);
+  if (rules.length === 0) return true;
+  const normalizedName = name.toLowerCase();
+  const normalizedType = mimeType.toLowerCase();
+  return rules.some((rule) =>
+    rule.startsWith('.')
+      ? normalizedName.endsWith(rule)
+      : rule.endsWith('/*')
+        ? normalizedType.startsWith(rule.slice(0, -1))
+        : normalizedType === rule,
+  );
+}
+
+function decodeUploadFile(
+  file: { name: string; mimeType: string; dataUrl: string },
+): File {
+  const comma = file.dataUrl.indexOf(',');
+  if (comma < 0) throw new PageActionError('ACTION_FAILED', 'Attached file data is invalid');
+  let decoded: string;
+  try {
+    decoded = atob(file.dataUrl.slice(comma + 1));
+  } catch {
+    throw new PageActionError('ACTION_FAILED', 'Attached file data could not be decoded');
+  }
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index);
+  }
+  return new File([bytes], file.name, { type: file.mimeType });
+}
+
+function uploadIntoElement(
+  element: Element,
+  fileData: { name: string; mimeType: string; dataUrl: string },
+): void {
+  if (!isUploadElement(element)) {
+    throw new PageActionError('UNSUPPORTED_ELEMENT', 'Target is not an enabled file input');
+  }
+  if (!fileMatchesAccept(fileData.name, fileData.mimeType, element.accept)) {
+    throw new PageActionError(
+      'UNSUPPORTED_ELEMENT',
+      `The ${fileData.name} file type is not accepted by this upload field`,
+    );
+  }
+  const transfer = new DataTransfer();
+  transfer.items.add(decodeUploadFile(fileData));
+  element.files = transfer.files;
+  dispatchInputEvents(element);
+}
+
 function extractElementValue(element: Element, action: ExtractAction): string {
   if (action.attribute) return element.getAttribute(action.attribute) ?? '';
   switch (action.property ?? 'text') {
@@ -438,9 +543,15 @@ export function buildPageOutline(root: Element): string {
     '[role="button"]',
     '[role="link"]',
     '[role="textbox"]',
+    'label[for]',
+    'legend',
     'h1',
     'h2',
     'h3',
+    'iframe[title]',
+    '[id*="captcha" i]',
+    '[class*="captcha" i]',
+    '[id*="verification" i]',
   ].join(',');
 
   return queryRoots(root).flatMap((queryRoot) => Array.from(queryRoot.querySelectorAll(selector)))
@@ -450,7 +561,9 @@ export function buildPageOutline(root: Element): string {
         return [];
       }
       const tag = node.tagName.toLowerCase();
-      const attributes = ['id', 'name', 'role', 'aria-label', 'placeholder', 'type']
+      const attributeNames = ['id', 'name', 'role', 'aria-label', 'placeholder', 'title', 'type', 'accept', 'href', 'data-testid'];
+      if (/captcha|verification/i.test(node.className)) attributeNames.push('class');
+      const attributes = attributeNames
         .flatMap((name) => {
           const value = node.getAttribute(name)?.trim().slice(0, 160);
           return value ? [`${name}=${JSON.stringify(value)}`] : [];
@@ -568,6 +681,16 @@ export async function executePageAction(
         element.checked = checked;
         dispatchInputEvents(element);
       }
+      return;
+    }
+    case 'upload': {
+      const element = await queryReadyElement(
+        document,
+        action.selector,
+        action.target,
+        'upload',
+      );
+      uploadIntoElement(element, action.file);
       return;
     }
     case 'scroll': {

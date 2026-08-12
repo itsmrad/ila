@@ -82,6 +82,9 @@ export function createApp(): Express {
   // Chat may carry up to five bounded inline file parts for the current turn.
   // They are model context only and are never persisted by the chat service.
   app.use("/api/chat", express.json({ limit: "64mb" }));
+  // Initial agent planning may carry one bounded combined attachment payload.
+  // Follow-up control requests contain metadata/context only.
+  app.use(["/api/agent/plan", "/api/agent/attachment-context"], express.json({ limit: "15mb" }));
 
   // JSON parsing for everything else.
   app.use(express.json({ limit: "1mb" }));

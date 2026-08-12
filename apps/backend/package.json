@@ -28,9 +28,11 @@
     "drizzle-orm": "^0.38.3",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
+    "mammoth": "1.10.0",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
+    "unpdf": "1.6.2",
     "zod": "3.25.76"
   },
   "devDependencies": {

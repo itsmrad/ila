@@ -5,6 +5,7 @@ import {
   LoaderCircle,
   MousePointer2,
   TextCursorInput,
+  Upload,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ const actionIcons: Partial<Record<BrowserAction['type'], LucideIcon>> = {
   type: TextCursorInput,
   select: TextCursorInput,
   check: Check,
+  upload: Upload,
 };
 
 export function ToolChip({ action }: { action: BrowserAction }) {

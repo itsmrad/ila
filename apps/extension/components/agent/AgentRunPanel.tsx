@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, ChevronDown, Square, X } from 'lucide-react';
-import type { AgentPlan, AgentPlanStep } from '@ila/shared';
+import type { AgentPlan, AgentPlanStep, HumanInputRequest } from '@ila/shared';
 import { useState } from 'react';
 import {
   ApprovalCard,
@@ -7,8 +7,9 @@ import {
   TaskRow,
   ThinkingTrace,
 } from '../ai';
+import { HumanInputCard, type HumanInputSubmission } from './HumanInputCard';
 
-export type AgentRunStatus = 'planning' | 'awaiting-confirmation' | 'running' | 'complete' | 'failed';
+export type AgentRunStatus = 'planning' | 'awaiting-confirmation' | 'awaiting-input' | 'running' | 'complete' | 'failed';
 
 export interface AgentRunView {
   status: AgentRunStatus;
@@ -19,6 +20,8 @@ export interface AgentRunView {
   error?: string;
   summary?: string;
   thinking?: boolean;
+  humanInput?: HumanInputRequest;
+  inputSubmitting?: boolean;
   execution?: Array<{
     step: AgentPlanStep;
     status: 'running' | 'succeeded' | 'failed';
@@ -29,10 +32,11 @@ export interface AgentRunView {
 interface AgentRunPanelProps {
   run: AgentRunView;
   onConfirm: () => void;
+  onHumanInput: (submission: HumanInputSubmission) => void;
   onCancel: () => void;
 }
 
-export function AgentRunPanel({ run, onConfirm, onCancel }: AgentRunPanelProps) {
+export function AgentRunPanel({ run, onConfirm, onHumanInput, onCancel }: AgentRunPanelProps) {
   const [expanded, setExpanded] = useState(true);
   const rows: Array<{
     step: AgentPlanStep;
@@ -59,6 +63,18 @@ export function AgentRunPanel({ run, onConfirm, onCancel }: AgentRunPanelProps) 
           ))}
         </ol>
       </ApprovalCard>
+    );
+  }
+
+  if (run.status === 'awaiting-input' && run.humanInput) {
+    return (
+      <HumanInputCard
+        request={run.humanInput}
+        submitting={run.inputSubmitting}
+        {...(run.error ? { error: run.error } : {})}
+        onSubmit={onHumanInput}
+        onCancel={onCancel}
+      />
     );
   }
 

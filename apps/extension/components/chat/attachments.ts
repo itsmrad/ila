@@ -32,6 +32,9 @@ export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const ACCEPTED_ATTACHMENT_TYPES = [
   'application/json',
   'application/pdf',
+  'application/rtf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'image/gif',
   'image/jpeg',
   'image/png',
@@ -43,6 +46,8 @@ export const ACCEPTED_ATTACHMENT_TYPES = [
 
 export const ACCEPTED_ATTACHMENT_EXTENSIONS = [
   '.csv',
+  '.doc',
+  '.docx',
   '.gif',
   '.jpeg',
   '.jpg',
@@ -50,6 +55,7 @@ export const ACCEPTED_ATTACHMENT_EXTENSIONS = [
   '.md',
   '.pdf',
   '.png',
+  '.rtf',
   '.txt',
   '.webp',
 ] as const;
@@ -58,6 +64,25 @@ export const ATTACHMENT_ACCEPT = [
   ...ACCEPTED_ATTACHMENT_TYPES,
   ...ACCEPTED_ATTACHMENT_EXTENSIONS,
 ].join(',');
+
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('The selected file could not be read.'));
+    });
+    reader.addEventListener('error', () => {
+      reject(reader.error ?? new Error('The selected file could not be read.'));
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
+export function createAttachmentId(): string {
+  return globalThis.crypto?.randomUUID?.() ??
+    `attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function hasAcceptedExtension(name: string): boolean {
   const normalized = name.toLowerCase();

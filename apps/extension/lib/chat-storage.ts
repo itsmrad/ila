@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { CHAT_LIMITS, chatRoleSchema, messagePartSchema } from '@ila/shared';
+import {
+  AGENT_LIMITS,
+  CHAT_LIMITS,
+  agentPlanSchema,
+  agentPlanStepSchema,
+  chatRoleSchema,
+  humanInputRequestSchema,
+  messagePartSchema,
+} from '@ila/shared';
 
 /**
  * Local persistence of the in-progress conversation.
@@ -18,6 +26,7 @@ const STORAGE_PREFIX = 'ila.chat.session.';
 
 /** Keep the stored payload small: recent turns only, text/reasoning only. */
 const MAX_STORED_MESSAGES = 40;
+const MAX_STORED_AGENT_RUNS = 40;
 
 /** Must match `storedMessageSchema.id`. */
 const MAX_STORED_ID_CHARS = 64;
@@ -28,7 +37,36 @@ const storedMessageSchema = z.object({
   parts: z.array(messagePartSchema).min(1).max(CHAT_LIMITS.maxPartsPerMessage),
 });
 
-const storedSessionSchema = z.object({
+const storedAgentExecutionSchema = z.object({
+  step: agentPlanStepSchema,
+  status: z.enum(['running', 'succeeded', 'failed']),
+  error: z.string().max(500).optional(),
+});
+
+export const storedAgentRunSchema = z.object({
+  id: z.string().min(1).max(MAX_STORED_ID_CHARS),
+  createdAt: z.number().int().nonnegative(),
+  status: z.enum([
+    'planning',
+    'awaiting-confirmation',
+    'awaiting-input',
+    'running',
+    'complete',
+    'failed',
+  ]),
+  task: z.string().trim().min(1).max(AGENT_LIMITS.maxTaskChars),
+  plan: agentPlanSchema.optional(),
+  activeStep: z.number().int().min(0).max(AGENT_LIMITS.maxSteps).optional(),
+  completedSteps: z.number().int().min(0).max(AGENT_LIMITS.maxSteps).optional(),
+  error: z.string().max(500).optional(),
+  summary: z.string().max(500).optional(),
+  thinking: z.boolean().optional(),
+  humanInput: humanInputRequestSchema.optional(),
+  inputSubmitting: z.boolean().optional(),
+  execution: z.array(storedAgentExecutionSchema).max(AGENT_LIMITS.maxExecutionRecords).optional(),
+});
+
+const storedSessionV1Schema = z.object({
   version: z.literal(1),
   chatId: z.string().uuid().optional(),
   model: z.string().max(120).optional(),
@@ -36,11 +74,62 @@ const storedSessionSchema = z.object({
   savedAt: z.number().int().nonnegative(),
 });
 
+const storedSessionSchema = z.object({
+  version: z.literal(2),
+  chatId: z.string().uuid().optional(),
+  model: z.string().max(120).optional(),
+  messages: z.array(storedMessageSchema).max(MAX_STORED_MESSAGES),
+  agentRuns: z.array(storedAgentRunSchema).max(MAX_STORED_AGENT_RUNS),
+  savedAt: z.number().int().nonnegative(),
+});
+
 export type StoredMessage = z.infer<typeof storedMessageSchema>;
+export type StoredAgentRun = z.infer<typeof storedAgentRunSchema>;
 export type StoredSession = z.infer<typeof storedSessionSchema>;
 
 function keyFor(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
+}
+
+/** Validate and migrate cache payloads without trusting extension storage. */
+export function parseStoredSession(value: unknown): StoredSession | null {
+  const parsed = storedSessionSchema.safeParse(value);
+  if (parsed.success) {
+    return {
+      ...parsed.data,
+      // A panel can be destroyed while an action is running. Never imply
+      // that the restored process is still live.
+      agentRuns: parsed.data.agentRuns.map((run) =>
+        run.status === 'planning' ||
+        run.status === 'running' ||
+        run.status === 'awaiting-input' ||
+        (run.status === 'awaiting-confirmation' &&
+          run.plan?.steps.some((step) => step.action.type === 'upload'))
+          ? {
+              ...run,
+              status: 'failed' as const,
+              thinking: false,
+              inputSubmitting: false,
+              error: run.status === 'awaiting-input'
+                ? 'This paused task was interrupted when the side panel closed. Start it again to continue safely.'
+                : run.plan?.steps.some((step) => step.action.type === 'upload')
+                ? 'The attachment was removed when the side panel closed. Attach it again and retry.'
+                : 'This task was interrupted when the side panel closed.',
+            }
+          : run,
+      ),
+    };
+  }
+
+  // Version 1 contained chat messages only. Migrate it in memory so an
+  // extension update never discards an existing conversation.
+  const previous = storedSessionV1Schema.safeParse(value);
+  if (!previous.success) return null;
+  return {
+    ...previous.data,
+    version: 2,
+    agentRuns: [],
+  };
 }
 
 /** Restore the cached conversation, or `null` when absent/unreadable. */
@@ -50,10 +139,7 @@ export async function loadChatSession(
   const key = keyFor(userId);
   try {
     const stored = await chrome.storage.local.get(key);
-    // Anything unrecognised (older schema, manual tampering) is discarded
-    // rather than trusted.
-    const parsed = storedSessionSchema.safeParse(stored[key]);
-    return parsed.success ? parsed.data : null;
+    return parseStoredSession(stored[key]);
   } catch {
     return null;
   }
@@ -66,6 +152,7 @@ export async function saveChatSession(
     chatId?: string;
     model?: string;
     messages: ReadonlyArray<{ id: string; role: string; parts: unknown }>;
+    agentRuns?: ReadonlyArray<StoredAgentRun>;
   },
 ): Promise<void> {
   const messages: StoredMessage[] = [];
@@ -97,10 +184,16 @@ export async function saveChatSession(
   }
 
   const payload = {
-    version: 1 as const,
+    version: 2 as const,
     ...(session.chatId ? { chatId: session.chatId } : {}),
     ...(session.model ? { model: session.model } : {}),
     messages,
+    agentRuns: (session.agentRuns ?? [])
+      .slice(-MAX_STORED_AGENT_RUNS)
+      .flatMap((run) => {
+        const parsed = storedAgentRunSchema.safeParse(run);
+        return parsed.success ? [parsed.data] : [];
+      }),
     savedAt: Date.now(),
   };
 

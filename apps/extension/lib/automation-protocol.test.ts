@@ -43,6 +43,7 @@ describe('automation protocol security boundary', () => {
         target: 'YouTube search field',
         text: 'mrbeast',
       },
+      expectedUrl: 'https://jobs.example.com/apply',
       confirmation: { approved: true },
     });
     expect(request.action).toEqual({
@@ -84,5 +85,42 @@ describe('automation protocol security boundary', () => {
       selector: '#terms',
       checked: true,
     }).required).toBe(true);
+  });
+
+  test('validates confirmed file uploads without accepting mismatched data', () => {
+    const request = validateAutomationRequest({
+      type: 'ila:automation:execute',
+      requestId: 'upload-resume',
+      scope: 'activeTab',
+      action: {
+        kind: 'upload',
+        selector: 'input[type="file"]',
+        target: 'Resume upload field',
+        file: {
+          name: 'Resume.pdf',
+          mimeType: 'application/pdf',
+          dataUrl: 'data:application/pdf;base64,JVBERg==',
+        },
+      },
+      expectedUrl: 'https://jobs.example.com/apply',
+      confirmation: { approved: true },
+    });
+    expect(request.action.kind).toBe('upload');
+    expect(request.expectedUrl).toBe('https://jobs.example.com/apply');
+    expect(confirmationPolicyForAction(request.action).required).toBe(true);
+    expect(() => validateAutomationRequest({
+      type: 'ila:automation:execute',
+      requestId: 'bad-upload',
+      scope: 'activeTab',
+      action: {
+        kind: 'upload',
+        selector: 'input',
+        file: {
+          name: 'Resume.pdf',
+          mimeType: 'application/pdf',
+          dataUrl: 'data:text/plain;base64,SGVsbG8=',
+        },
+      },
+    })).toThrow();
   });
 });

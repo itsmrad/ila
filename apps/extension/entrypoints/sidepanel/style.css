@@ -73,6 +73,11 @@ button { cursor: pointer; }
   50% { opacity: .92; transform: scale(1); }
 }
 
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

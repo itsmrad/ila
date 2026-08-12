@@ -24,37 +24,17 @@ import type { AgentSettings } from '../../lib/settings-storage';
 import { ContextCard } from '../ai';
 import {
   ATTACHMENT_ACCEPT,
+  createAttachmentId,
   dataUrlByteLength,
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_BYTES,
+  readFileAsDataUrl,
   summarizeAttachmentRejections,
   validateAttachmentCandidates,
   type ComposerAttachment,
 } from './attachments';
 
 export type { ComposerAttachment } from './attachments';
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-      } else {
-        reject(new Error('The selected file could not be read.'));
-      }
-    });
-    reader.addEventListener('error', () => {
-      reject(reader.error ?? new Error('The selected file could not be read.'));
-    });
-    reader.readAsDataURL(file);
-  });
-}
-
-function attachmentId(): string {
-  return globalThis.crypto?.randomUUID?.() ??
-    `attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -299,7 +279,7 @@ export function Composer({
     setIsAddingFiles(true);
     const settled = await Promise.allSettled(
       accepted.map(async (file): Promise<ComposerAttachment> => ({
-        id: attachmentId(),
+        id: createAttachmentId(),
         kind: 'upload',
         name: file.name,
         mimeType: file.type || 'application/octet-stream',
@@ -363,7 +343,7 @@ export function Composer({
       commitAttachments([
         ...attachmentsRef.current,
         {
-          id: attachmentId(),
+          id: createAttachmentId(),
           kind: 'capture',
           name: `visible-tab-${timestamp}.png`,
           mimeType: 'image/png',

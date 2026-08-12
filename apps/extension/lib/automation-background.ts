@@ -3,6 +3,7 @@ import {
   AUTOMATION_CONTENT_MESSAGE,
   AUTOMATION_RESULT_MESSAGE,
   type AutomationErrorCode,
+  type AutomationAction,
   type AutomationExecuteRequest,
   type AutomationResponse,
   confirmationMetadata,
@@ -10,6 +11,11 @@ import {
   isHttpUrl,
   isPageAutomationAction,
 } from './automation-protocol';
+
+/** Browser-level actions can bootstrap safely without access to page content. */
+export function actionRequiresHttpPage(action: AutomationAction): boolean {
+  return isPageAutomationAction(action);
+}
 
 function errorResponse(
   request: AutomationExecuteRequest,
@@ -122,7 +128,10 @@ async function waitForPageActivity(
   });
 }
 
-/** Executes only against the active HTTP(S) tab in the current window. */
+/**
+ * Execute browser-level navigation from any active tab. DOM automation remains
+ * restricted to HTTP(S), but opening a website must work from chrome://newtab.
+ */
 export async function executeAutomationRequest(
   request: AutomationExecuteRequest,
 ): Promise<AutomationResponse> {
@@ -144,14 +153,13 @@ export async function executeAutomationRequest(
       'An active tab is required',
     );
   }
-  if (!isHttpUrl(tab.url)) {
+  if (actionRequiresHttpPage(request.action) && !isHttpUrl(tab.url)) {
     return errorResponse(
       request,
       'UNSUPPORTED_URL',
-      'Automation is limited to HTTP(S) pages',
+      'Open or navigate to a regular website before using page controls',
     );
   }
-
   try {
     // Re-query immediately before execution so the request never carries an
     // arbitrary tab identifier and a tab switch invalidates the request.
@@ -161,6 +169,13 @@ export async function executeAutomationRequest(
         request,
         'ACTIVE_TAB_CHANGED',
         'The active tab changed before the action could run',
+      );
+    }
+    if (request.expectedUrl && current.url !== request.expectedUrl) {
+      return errorResponse(
+        request,
+        'ACTIVE_TAB_CHANGED',
+        'The active page changed after ILA observed it',
       );
     }
 
@@ -197,10 +212,18 @@ export async function executeAutomationRequest(
         if (!isPageAutomationAction(request.action)) {
           return errorResponse(request, 'INVALID_REQUEST', 'Unsupported action');
         }
+        const pageUrl = tab.url;
+        if (!isHttpUrl(pageUrl)) {
+          return errorResponse(
+            request,
+            'UNSUPPORTED_URL',
+            'Open or navigate to a regular website before using page controls',
+          );
+        }
         const result: unknown = await browser.tabs.sendMessage(tab.id, {
           type: AUTOMATION_CONTENT_MESSAGE,
           requestId: request.requestId,
-          expectedUrl: tab.url,
+          expectedUrl: pageUrl,
           action: request.action,
           confirmation: confirmationMetadata(request.action, approved),
         });
@@ -216,7 +239,7 @@ export async function executeAutomationRequest(
         ) {
           const response = result as AutomationResponse;
           if (response.ok && request.action.kind === 'click') {
-            await waitForPageActivity(tab.id, tab.url);
+            await waitForPageActivity(tab.id, pageUrl);
           }
           return response;
         }

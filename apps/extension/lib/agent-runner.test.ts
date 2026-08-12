@@ -46,4 +46,32 @@ describe('agent action mapping', () => {
   test('keeps wait local to the runner', () => {
     expect(toAutomationAction({ type: 'wait', milliseconds: 250 })).toBeNull();
   });
+
+  test('resolves upload attachment ids locally without exposing filesystem paths', () => {
+    expect(toAutomationAction({
+      type: 'upload',
+      selector: 'input[type="file"]',
+      target: 'Resume upload field',
+      attachmentId: 'resume-one',
+    }, [{
+      id: 'resume-one',
+      name: 'Resume.pdf',
+      mimeType: 'application/pdf',
+      dataUrl: 'data:application/pdf;base64,JVBERg==',
+    }])).toEqual({
+      kind: 'upload',
+      selector: 'input[type="file"]',
+      target: 'Resume upload field',
+      file: {
+        name: 'Resume.pdf',
+        mimeType: 'application/pdf',
+        dataUrl: 'data:application/pdf;base64,JVBERg==',
+      },
+    });
+    expect(() => toAutomationAction({
+      type: 'upload',
+      selector: 'input[type="file"]',
+      attachmentId: 'missing',
+    })).toThrow();
+  });
 });

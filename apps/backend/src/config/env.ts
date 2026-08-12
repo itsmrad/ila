@@ -118,6 +118,24 @@ const envSchema = z
       .min(1_000)
       .max(600_000)
       .default(120_000),
+    /** Total deadline for one agent plan/decision, kept below interactive UX limits. */
+    AI_AGENT_REQUEST_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(5_000)
+      .max(60_000)
+      .default(28_000),
+    /** Per-model deadline before the planner tries another allowed model. */
+    AI_AGENT_ATTEMPT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(2_000)
+      .max(30_000)
+      .default(8_000),
+    /** Optional dedicated low-latency model for browser planning and control. */
+    AI_AGENT_MODEL: z.string().min(1).max(120).optional(),
+    /** Optional preferred failover model; it must also be in the allowlist. */
+    AI_AGENT_FALLBACK_MODEL: z.string().min(1).max(120).optional(),
 
     // Per-user rate limit for the (expensive) chat completion endpoint.
     CHAT_RATE_LIMIT_WINDOW_SECONDS: z.coerce
@@ -162,6 +180,22 @@ const envSchema = z
         path: ["AI_ALLOWED_MODELS"],
         message: "AI_ALLOWED_MODELS must include AI_MODEL",
       });
+    }
+
+    for (const [path, model] of [
+      ["AI_AGENT_MODEL", value.AI_AGENT_MODEL],
+      ["AI_AGENT_FALLBACK_MODEL", value.AI_AGENT_FALLBACK_MODEL],
+    ] as const) {
+      const modelAllowed = value.AI_ALLOWED_MODELS.length > 0
+        ? Boolean(model && value.AI_ALLOWED_MODELS.includes(model))
+        : model === value.AI_MODEL;
+      if (model && !modelAllowed) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [path],
+          message: `${path} must appear in AI_ALLOWED_MODELS`,
+        });
+      }
     }
   });
 

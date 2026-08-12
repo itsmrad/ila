@@ -4,6 +4,7 @@ import {
   agentPlanRequestSchema,
   agentPlanSchema,
   agentDecisionSchema,
+  agentAttachmentContextRequestSchema,
   browserActionSchema,
 } from "./agent";
 
@@ -72,10 +73,41 @@ describe("browser action contract", () => {
       target: "Terms checkbox",
       checked: true,
     }).success).toBe(true);
+    expect(browserActionSchema.safeParse({
+      type: "upload",
+      selector: 'input[type="file"]',
+      target: "Resume upload field",
+      attachmentId: "resume-one",
+    }).success).toBe(true);
     expect(agentDecisionSchema.safeParse({
       status: "complete",
       summary: "The requested page is visible.",
     }).success).toBe(true);
+    expect(agentDecisionSchema.safeParse({
+      status: "needs_input",
+      request: {
+        title: "Choose a work arrangement",
+        questions: [{
+          id: "work-arrangement",
+          prompt: "Which visible option should I select?",
+          type: "single_choice",
+          required: true,
+          options: ["Remote", "Hybrid"],
+        }],
+      },
+    }).success).toBe(true);
+    expect(agentDecisionSchema.safeParse({
+      status: "needs_input",
+      request: {
+        title: "Missing choices",
+        questions: [{
+          id: "choice",
+          prompt: "Choose one",
+          type: "single_choice",
+          required: true,
+        }],
+      },
+    }).success).toBe(false);
   });
 
   test("requires confirmation for browser-changing page actions", () => {
@@ -86,6 +118,33 @@ describe("browser action contract", () => {
     expect(
       actionRequiresConfirmation({ type: "scroll", direction: "down", amount: 700 }),
     ).toBe(false);
+    expect(actionRequiresConfirmation({
+      type: "upload",
+      selector: 'input[type="file"]',
+      attachmentId: "resume-one",
+    })).toBe(true);
+  });
+
+  test("accepts bounded attachment data and rejects aggregate overflow", () => {
+    expect(agentPlanRequestSchema.safeParse({
+      task: "Apply using my resume",
+      attachments: [{
+        id: "resume-one",
+        name: "Resume.pdf",
+        mediaType: "application/pdf",
+        size: 6,
+        dataUrl: "data:application/pdf;base64,JVBERg==",
+      }],
+    }).success).toBe(true);
+    expect(agentAttachmentContextRequestSchema.safeParse({
+      attachments: [{
+        id: "resume-one",
+        name: "Resume.pdf",
+        mediaType: "application/pdf",
+        size: 6,
+        dataUrl: "data:application/pdf;base64,JVBERg==",
+      }],
+    }).success).toBe(true);
   });
 });
 
