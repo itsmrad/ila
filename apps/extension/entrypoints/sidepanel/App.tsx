@@ -146,6 +146,16 @@ function ChatApp({
     void loadAgentSettings().then(setAgentSettings);
   }, []);
 
+  // A deployment may remove or rename a model. Never keep sending a stale
+  // locally cached id after the server publishes its current allowlist.
+  useEffect(() => {
+    if (models.length === 0) return;
+    if (model && models.some((option) => option.id === model)) return;
+    setModel(
+      models.find((option) => option.default)?.id ?? models[0]?.id,
+    );
+  }, [model, models]);
+
   useEffect(() => {
     if (!agentSettings.memory || !pageContext?.url) return;
     void processPageVisit({

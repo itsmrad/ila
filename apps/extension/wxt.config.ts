@@ -49,6 +49,11 @@ function backendHostPermissions(env: ConfigEnv): string[] {
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  // Keep WXT's HMR server away from the conventional web-app port. The
+  // extension-first development stack does not need or start apps/web.
+  dev: {
+    server: { port: 5_173, strictPort: true },
+  },
   manifest: (env) => ({
     name: 'ILA',
     description: 'Your intelligent browser productivity assistant.',

@@ -34,6 +34,40 @@ async function getActiveTab() {
   return tab;
 }
 
+/** Wait until navigation has committed and the destination content script can run. */
+async function waitForTabComplete(
+  tabId: number,
+  timeoutMs = 20_000,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      browser.tabs.onUpdated.removeListener(onUpdated);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onUpdated = (updatedId: number, change: { status?: string }) => {
+      if (updatedId === tabId && change.status === 'complete') finish();
+    };
+    const timeout = setTimeout(() => {
+      finish(new Error('Timed out waiting for the page to load'));
+    }, timeoutMs);
+
+    browser.tabs.onUpdated.addListener(onUpdated);
+    // Check after subscribing so a fast navigation cannot complete between the
+    // initial status read and listener registration.
+    void browser.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (tab.status === 'complete') finish();
+      })
+      .catch(() => finish(new Error('The destination tab was closed')));
+  });
+}
+
 /** Executes only against the active HTTP(S) tab in the current window. */
 export async function executeAutomationRequest(
   request: AutomationExecuteRequest,
@@ -79,15 +113,18 @@ export async function executeAutomationRequest(
     switch (request.action.kind) {
       case 'navigate':
         await browser.tabs.update(tab.id, { url: request.action.url });
+        await waitForTabComplete(tab.id);
         break;
-      case 'newTab':
-        await browser.tabs.create({
+      case 'newTab': {
+        const created = await browser.tabs.create({
           url: request.action.url,
           active: true,
           windowId: tab.windowId,
           index: tab.index + 1,
         });
+        if (typeof created.id === 'number') await waitForTabComplete(created.id);
         break;
+      }
       case 'closeTab':
         await browser.tabs.remove(tab.id);
         break;
