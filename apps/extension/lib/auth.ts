@@ -68,10 +68,25 @@ export async function launchLogin(): Promise<string> {
   const redirectUri = chrome.identity.getRedirectURL();
   const url = `${BACKEND_URL}/login?redirect=${encodeURIComponent(redirectUri)}`;
 
-  const resultUrl = await chrome.identity.launchWebAuthFlow({
-    url,
-    interactive: true,
-  });
+  // Check the page first. `launchWebAuthFlow` collapses every load failure into
+  // "Authorization page could not be loaded", which says nothing about whether
+  // the backend is down or the redirect is unregistered — both common in dev.
+  await assertLoginPageReachable(url, redirectUri);
+
+  let resultUrl: string | undefined;
+  try {
+    resultUrl = await chrome.identity.launchWebAuthFlow({
+      url,
+      interactive: true,
+    });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw /could not be loaded/i.test(message)
+      ? new Error(
+          `The sign-in page at ${BACKEND_URL} could not be opened. Check that the ILA backend is running and reachable.`,
+        )
+      : new Error(message);
+  }
 
   if (!resultUrl) throw new Error("Sign-in was cancelled.");
 
@@ -81,6 +96,41 @@ export async function launchLogin(): Promise<string> {
 
   await setStoredToken(token);
   return token;
+}
+
+/** Fail with an actionable message before the auth window is opened. */
+async function assertLoginPageReachable(
+  url: string,
+  redirectUri: string,
+): Promise<void> {
+  let response: Response;
+  try {
+    // A hung connection (a backend that accepts but never answers) must not leave
+    // the button spinning; a timeout abort lands in the same branch as a refusal.
+    response = await fetch(url, {
+      credentials: "omit",
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    throw new Error(
+      `Could not reach the ILA backend at ${BACKEND_URL}. Is it running?`,
+    );
+  }
+
+  if (response.ok) return;
+
+  // The backend answers 400 when the callback URL is not in its allowlist,
+  // which happens whenever the extension id changes (a reload from a different
+  // directory, a fresh profile, a new build output).
+  if (response.status === 400) {
+    throw new Error(
+      `The backend rejected this extension's sign-in callback. Set EXTENSION_REDIRECT_URL to ${redirectUri} and restart it.`,
+    );
+  }
+
+  throw new Error(
+    `The sign-in page returned HTTP ${response.status}. Check the backend logs.`,
+  );
 }
 
 /** Revoke the session on the backend, then clear the locally stored token. */

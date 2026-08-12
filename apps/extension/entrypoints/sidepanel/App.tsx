@@ -10,13 +10,23 @@ import {
 import { IlaMark } from '@ila/ui';
 import type { ChatMessage, ChatModel, PageContext } from '@ila/shared';
 import { UtilityBar } from '../../components/layout/UtilityBar';
+import { ModeTabs, tabPanelId, type PanelMode } from '../../components/layout/ModeTabs';
 import { Composer } from '../../components/chat/Composer';
 import { MessageBubble } from '../../components/chat/MessageBubble';
 import { ErrorToast } from '../../components/chat/ErrorToast';
 import { ChatHistoryPanel } from '../../components/chat/ChatHistoryPanel';
+import { ContextBar } from '../../components/context/ContextBar';
+import { AutomationsPanel } from '../../components/automations/AutomationsPanel';
+import { SettingsDrawer } from '../../components/settings/SettingsDrawer';
 import { LoginScreen } from '../../components/auth/LoginScreen';
 import { useAuth } from '../../lib/useAuth';
-import { usePageContext } from '../../lib/usePageContext';
+import { useTabContext } from '../../lib/useTabContext';
+import {
+  DEFAULT_PREFERENCES,
+  loadPreferences,
+  savePreferences,
+  type Preferences,
+} from '../../lib/prefs';
 import {
   ChatApiError,
   deleteChat,
@@ -88,12 +98,11 @@ function ChatApp({
     modelRef.current = model;
   }, [model]);
 
-  const { pageContext } = usePageContext();
-  const [shareContext, setShareContext] = useState(true);
+  const { pageContext, ...tabContext } = useTabContext(user.id);
   const pageContextRef = useRef<PageContext | undefined>(undefined);
   useEffect(() => {
-    pageContextRef.current = shareContext ? (pageContext ?? undefined) : undefined;
-  }, [pageContext, shareContext]);
+    pageContextRef.current = pageContext;
+  }, [pageContext]);
 
   // Built once: the transport reads live values through refs so it never needs
   // to be recreated (which would drop an in-flight stream).
@@ -117,10 +126,22 @@ function ChatApp({
 
   const [input, setInput] = useState('');
   const [restored, setRestored] = useState(false);
+  const [panelMode, setPanelMode] = useState<PanelMode>('chat');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void loadPreferences().then(setPreferences);
+  }, []);
+
+  const updatePreferences = useCallback((next: Preferences) => {
+    setPreferences(next);
+    void savePreferences(next);
+  }, []);
 
   const messagesRef = useRef<UIMessage[]>(messages);
   useEffect(() => {
@@ -329,77 +350,108 @@ function ChatApp({
         onNewChat={startNewChat}
         onClearConversation={() => void clearConversation()}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         busy={isBusy}
         hasConversation={messages.length > 0}
         user={user}
         onSignOut={onSignOut}
       />
 
-      <div
-        ref={scrollArea}
-        className="flex-1 overflow-auto px-4 md:px-[42px] pt-[26px] pb-[220px] scrollbar-thin"
-      >
-        {messages.length > 0 ? (
-          <div className="flex flex-col gap-8 pb-4">
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                isStreaming={
-                  status === 'streaming' &&
-                  message.id === lastMessage?.id &&
-                  message.role === 'assistant'
-                }
-              />
-            ))}
-            {status === 'submitted' && lastMessage?.role === 'user' && (
-              <MessageBubble
-                message={{ id: 'pending', role: 'assistant', parts: [] }}
-                isStreaming
-              />
+      <ModeTabs mode={panelMode} onModeChange={setPanelMode} />
+
+      {panelMode === 'chat' ? (
+        <div
+          id={tabPanelId('chat')}
+          role="tabpanel"
+          aria-labelledby="ila-tab-chat"
+          className="relative flex flex-1 flex-col overflow-hidden"
+        >
+          <div
+            ref={scrollArea}
+            className="flex-1 overflow-auto px-4 md:px-[42px] pt-[26px] pb-[260px] scrollbar-thin"
+          >
+            {messages.length > 0 ? (
+              <div className="flex flex-col gap-8 pb-4">
+                {messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    isStreaming={
+                      status === 'streaming' &&
+                      message.id === lastMessage?.id &&
+                      message.role === 'assistant'
+                    }
+                  />
+                ))}
+                {status === 'submitted' && lastMessage?.role === 'user' && (
+                  <MessageBubble
+                    message={{ id: 'pending', role: 'assistant', parts: [] }}
+                    isStreaming
+                  />
+                )}
+              </div>
+            ) : (
+              <div className="min-h-full flex flex-col items-center justify-center gap-5 text-[#bbb] text-[13px]">
+                <IlaMark large />
+                <span>Ask ILA anything about this page</span>
+              </div>
             )}
           </div>
-        ) : (
-          <div className="min-h-full flex flex-col items-center justify-center gap-5 text-[#bbb] text-[13px]">
-            <IlaMark large />
-            <span>Ask ILA anything about this page</span>
+
+          <div className="absolute z-10 left-3 right-3 md:left-[28px] md:right-[28px] bottom-3 md:bottom-[25px] flex flex-col gap-2">
+            {notice && (
+              <ErrorToast message={notice} onDismiss={() => setNotice(null)} />
+            )}
+            {errorMessage && (
+              <ErrorToast
+                message={errorMessage}
+                onDismiss={clearError}
+                {...(canRetry
+                  ? {
+                      onRetry: () => {
+                        clearError();
+                        void regenerate();
+                      },
+                    }
+                  : {})}
+              />
+            )}
+
+            <ContextBar
+              tabs={tabContext.tabs}
+              mode={tabContext.mode}
+              onModeChange={tabContext.setMode}
+              customTabIds={tabContext.customTabIds}
+              onToggleTab={tabContext.toggleTab}
+              selectedTabs={tabContext.selectedTabs}
+              unavailable={tabContext.unavailable}
+            />
+
+            <Composer
+              value={input}
+              onChange={setInput}
+              onSubmit={submit}
+              onStop={stop}
+              isBusy={isBusy}
+              models={models}
+              model={model}
+              onModelChange={setModel}
+            />
           </div>
-        )}
-      </div>
-
-      <div className="absolute z-10 left-3 right-3 md:left-[28px] md:right-[28px] bottom-3 md:bottom-[25px] flex flex-col gap-2">
-        {notice && (
-          <ErrorToast message={notice} onDismiss={() => setNotice(null)} />
-        )}
-        {errorMessage && (
-          <ErrorToast
-            message={errorMessage}
-            onDismiss={clearError}
-            {...(canRetry
-              ? {
-                  onRetry: () => {
-                    clearError();
-                    void regenerate();
-                  },
-                }
-              : {})}
+        </div>
+      ) : (
+        <div
+          id={tabPanelId('automations')}
+          role="tabpanel"
+          aria-labelledby="ila-tab-automations"
+          className="flex-1 overflow-auto px-4 pt-2 pb-6 md:px-[30px] scrollbar-thin"
+        >
+          <AutomationsPanel
+            mode={tabContext.mode}
+            selectedTabs={tabContext.selectedTabs}
           />
-        )}
-
-        <Composer
-          value={input}
-          onChange={setInput}
-          onSubmit={submit}
-          onStop={stop}
-          isBusy={isBusy}
-          models={models}
-          model={model}
-          onModelChange={setModel}
-          pageContext={pageContext}
-          shareContext={shareContext}
-          onShareContextChange={setShareContext}
-        />
-      </div>
+        </div>
+      )}
 
       <ChatHistoryPanel
         open={historyOpen}
@@ -408,6 +460,13 @@ function ChatApp({
         onSelect={(selected) => void openConversation(selected)}
         onDeleted={onHistoryDeleted}
         refreshToken={historyRefresh}
+      />
+
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        preferences={preferences}
+        onPreferencesChange={updatePreferences}
       />
     </main>
   );

@@ -45,6 +45,19 @@ const postgresUrl = z
     "DATABASE_URL must use postgres or postgresql",
   );
 
+/** A base64-encoded key of an exact byte length. */
+const base64Key = (name: string, bytes: number) =>
+  z
+    .string()
+    .refine((value) => {
+      const decoded = Buffer.from(value, "base64");
+      // `Buffer.from` ignores invalid characters, so re-encoding is what proves
+      // the input was really base64 and not a truncated paste.
+      return (
+        decoded.length === bytes && decoded.toString("base64") === value.trim()
+      );
+    }, `${name} must be ${bytes} bytes, base64-encoded (openssl rand -base64 ${bytes})`);
+
 const extensionOrigin = z
   .string()
   .url("EXTENSION_ORIGIN must be a valid URL")
@@ -127,6 +140,13 @@ const envSchema = z
       .max(3_600)
       .default(60),
     CHAT_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(10_000).default(20),
+
+    /**
+     * Master key for encrypting user-supplied secrets (BYOK provider keys) at
+     * rest. 32 raw bytes, base64-encoded: `openssl rand -base64 32`.
+     * BYOK endpoints return 503 while it is unset.
+     */
+    SECRETS_ENCRYPTION_KEY: base64Key("SECRETS_ENCRYPTION_KEY", 32).optional(),
   })
   .superRefine((value, ctx) => {
     if (
@@ -172,6 +192,8 @@ export type Env = z.infer<typeof envSchema> & {
   aiEnabled: boolean;
   /** Resolved model allowlist (always contains `AI_MODEL`). */
   aiAllowedModels: readonly string[];
+  /** True when user-supplied provider keys can be encrypted at rest. */
+  byokEnabled: boolean;
 };
 
 function loadEnv(): Env {
@@ -206,6 +228,7 @@ function loadEnv(): Env {
     ),
     aiEnabled: Boolean(parsed.data.AI_API_KEY),
     aiAllowedModels: Object.freeze(allowedModels),
+    byokEnabled: Boolean(parsed.data.SECRETS_ENCRYPTION_KEY),
   };
 }
 

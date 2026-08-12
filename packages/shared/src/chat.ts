@@ -25,6 +25,8 @@ export const CHAT_LIMITS = {
   maxPartsPerMessage: 8,
   /** Max characters of page context attached to a request. */
   maxPageContextChars: 4_000,
+  /** Max tabs whose metadata may be attached to a request. */
+  maxContextTabs: 12,
   /** Max stored title length. */
   maxTitleChars: 120,
   /** Max prior messages replayed to the model (oldest are dropped). */
@@ -87,19 +89,30 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
  * Optional, untrusted context about the page the user is looking at.
  * Treated as data (never as instructions) by the system prompt.
  */
+const contextUrlSchema = z
+  .string()
+  .url()
+  .max(2_048)
+  // Only web pages. Rejects `javascript:`, `data:`, and `file:` URLs, which
+  // would otherwise reach the model (and could leak local paths).
+  .refine((value) => /^https?:\/\//i.test(value), "url must be an http(s) URL");
+
+/** Metadata for one browser tab the user chose to share. */
+export const tabContextSchema = z.object({
+  title: z.string().max(300).optional(),
+  url: contextUrlSchema,
+});
+
+export type TabContext = z.infer<typeof tabContextSchema>;
+
 export const pageContextSchema = z.object({
   title: z.string().max(300).optional(),
-  url: z
-    .string()
-    .url()
-    .max(2_048)
-    // Only web pages. Rejects `javascript:`, `data:`, and `file:` URLs, which
-    // would otherwise reach the model (and could leak local paths).
-    .refine(
-      (value) => /^https?:\/\//i.test(value),
-      "url must be an http(s) URL",
-    )
-    .optional(),
+  url: contextUrlSchema.optional(),
+  /**
+   * Metadata for the tabs the user selected in the context bar. Titles and URLs
+   * only — page contents are never collected here.
+   */
+  tabs: z.array(tabContextSchema).max(CHAT_LIMITS.maxContextTabs).optional(),
 });
 
 export type PageContext = z.infer<typeof pageContextSchema>;

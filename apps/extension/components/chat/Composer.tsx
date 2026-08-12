@@ -3,50 +3,13 @@ import {
   ArrowUp,
   Check,
   Crop,
-  Globe,
   Mic2,
   Paperclip,
   SlidersHorizontal,
   Square,
-  X,
 } from 'lucide-react';
 import { IconButton } from '@ila/ui';
-import { CHAT_LIMITS, type ChatModel, type PageContext } from '@ila/shared';
-
-/** Chip showing which page will be shared with the assistant. */
-function ContextTag({
-  pageContext,
-  onRemove,
-}: {
-  pageContext: PageContext;
-  onRemove: () => void;
-}) {
-  const hostname = (() => {
-    if (!pageContext.url) return pageContext.title ?? 'Current page';
-    try {
-      return new URL(pageContext.url).hostname.replace(/^www\./, '');
-    } catch {
-      return pageContext.title ?? 'Current page';
-    }
-  })();
-
-  return (
-    <div className="group relative flex items-center gap-2 w-fit h-[34px] px-[14px] mb-3 rounded-[12px] bg-[#f0f0f0] border border-[#e5e5e5] text-[#4e4e4e] text-[13px] font-medium transition-all hover:bg-[#e8e8e8] shadow-sm">
-      <Globe size={16} className="text-gray-500" aria-hidden="true" />
-      <span className="max-w-[160px] truncate" title={pageContext.url}>
-        {hostname}
-      </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ml-1 w-5 h-5 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center transition-all cursor-pointer"
-        aria-label="Stop sharing this page"
-      >
-        <X size={12} className="text-gray-600" aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
+import { CHAT_LIMITS, type ChatModel } from '@ila/shared';
 
 /** Model picker backed by the server's allowlist. */
 function ModelMenu({
@@ -166,9 +129,6 @@ export interface ComposerProps {
   models: ChatModel[];
   model?: string;
   onModelChange: (id: string) => void;
-  pageContext: PageContext | null;
-  shareContext: boolean;
-  onShareContextChange: (share: boolean) => void;
 }
 
 export function Composer({
@@ -180,9 +140,6 @@ export function Composer({
   models,
   model,
   onModelChange,
-  pageContext,
-  shareContext,
-  onShareContextChange,
 }: ComposerProps) {
   const textarea = useRef<HTMLTextAreaElement>(null);
 
@@ -224,13 +181,6 @@ export function Composer({
         className="flex flex-col min-h-[100px] p-3 md:px-[18px] md:pt-[16px] md:pb-[14px] border border-[#dedede] rounded-[22px] md:rounded-[26px] bg-white shadow-inner transition-colors focus-within:border-[#a9baf6] focus-within:shadow-[0_0_0_2px_#a9baf633]"
         onSubmit={onFormSubmit}
       >
-        {shareContext && pageContext && (
-          <ContextTag
-            pageContext={pageContext}
-            onRemove={() => onShareContextChange(false)}
-          />
-        )}
-
         <textarea
           ref={textarea}
           value={value}
@@ -285,14 +235,6 @@ export function Composer({
             model={model}
             onModelChange={onModelChange}
           />
-          {pageContext && !shareContext && (
-            <IconButton
-              label="Share this page as context"
-              onClick={() => onShareContextChange(true)}
-            >
-              <Globe size={20} />
-            </IconButton>
-          )}
           <div className="flex-1" />
           <IconButton label="Attach file (coming soon)" disabled>
             <Paperclip size={20} />
