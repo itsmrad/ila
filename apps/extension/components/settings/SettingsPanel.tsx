@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Brain, ChevronRight, Loader2, RotateCcw, X } from 'lucide-react';
+import { Brain, ChevronRight, KeyRound, Loader2, RotateCcw, X } from 'lucide-react';
 import {
   loadAgentSettings,
   resetAgentSettings,
@@ -12,6 +12,7 @@ export interface SettingsPanelProps {
   onClose: () => void;
   onChange?: (settings: AgentSettings) => void;
   onOpenMemory?: () => void;
+  onOpenAccountSettings?: () => void;
 }
 
 const OPTIONS: ReadonlyArray<{
@@ -47,6 +48,7 @@ export function SettingsPanel({
   onClose,
   onChange,
   onOpenMemory,
+  onOpenAccountSettings,
 }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [saving, setSaving] = useState<keyof AgentSettings | 'reset' | null>(
@@ -185,6 +187,20 @@ export function SettingsPanel({
             <span className="min-w-0 flex-1">
               <span className="block text-[12.5px] font-medium text-[var(--ink)]">Process browsing memory</span>
               <span className="mt-0.5 block text-[11px] text-[var(--ink-3)]">Review and clear locally retained page context.</span>
+            </span>
+            <ChevronRight size={16} className="text-[var(--ink-3)]" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenAccountSettings}
+            className="mt-2 flex w-full items-center gap-3 rounded-[13px] bg-[var(--surface)] px-3 py-3 text-left shadow-[var(--shadow-hairline)] transition-colors hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
+          >
+            <span className="grid size-9 place-items-center rounded-[10px] bg-[var(--field)] text-[var(--ink-2)]">
+              <KeyRound size={17} aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] font-medium text-[var(--ink)]">Connections and provider keys</span>
+              <span className="mt-0.5 block text-[11px] text-[var(--ink-3)]">Manage integrations and encrypted model credentials.</span>
             </span>
             <ChevronRight size={16} className="text-[var(--ink-3)]" aria-hidden="true" />
           </button>

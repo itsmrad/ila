@@ -10,13 +10,14 @@ interface UtilityBarProps {
   onClearConversation: () => void;
   /** Open the saved-conversation list. */
   onOpenHistory: () => void;
+  /** Open the settings drawer. */
+  onOpenSettings: () => void;
   /** Disables destructive actions while a response is streaming. */
   busy?: boolean;
   /** True when there is something on screen worth clearing. */
   hasConversation?: boolean;
   user?: SessionUser | null;
   onSignOut?: () => void;
-  onOpenSettings: () => void;
   onOpenMemory: () => void;
   memoryEnabled?: boolean;
   darkMode: boolean;
@@ -32,11 +33,11 @@ export function UtilityBar({
   onNewChat,
   onClearConversation,
   onOpenHistory,
+  onOpenSettings,
   busy = false,
   hasConversation = false,
   user,
   onSignOut,
-  onOpenSettings,
   onOpenMemory,
   memoryEnabled = false,
   darkMode,

@@ -91,6 +91,35 @@ Clients send only the newest user message plus an optional `chatId`; the server
 rebuilds the conversation from its own tables, so prior turns cannot be forged.
 The server-assigned conversation id comes back in the `x-ila-chat-id` header.
 
+The extension's context bar decides what the model is told about the browser:
+nothing, the current tab, every tab in the window, or a hand-picked set. Only
+titles and URLs are sent (max 12 tabs), and they are embedded in the system
+prompt as clearly-fenced untrusted data.
+
+## Settings: integrations & BYOK
+
+Secrets stay on the server. The extension shows status and triggers flows; it
+never stores an OAuth token or a provider key in `chrome.storage`.
+
+| Method   | Path                              | Purpose                                     |
+| -------- | --------------------------------- | ------------------------------------------- |
+| `GET`    | `/api/integrations`               | Connection status per app                   |
+| `POST`   | `/api/integrations/:app/connect`  | Start OAuth (501 until a provider is wired) |
+| `GET`    | `/api/keys/llm`                   | Which providers the caller has a key for    |
+| `POST`   | `/api/keys/llm`                   | Store/replace a provider key                |
+| `DELETE` | `/api/keys/llm/:provider`         | Delete a stored key                         |
+
+BYOK keys are encrypted with AES-256-GCM before they are stored, using a master
+key from the backend environment:
+
+```bash
+SECRETS_ENCRYPTION_KEY=$(openssl rand -base64 32)   # 32 raw bytes, base64
+```
+
+While it is unset the key endpoints answer `503` and the settings drawer says so.
+No endpoint ever returns key material, and rotating the master key makes existing
+stored keys unreadable. Apply `drizzle/0005_user_settings.sql` before use.
+
 ## Shared UI (`@ila/ui`)
 
 Presentation-agnostic components (`cn`, `IconButton`, `IlaMark`) live in

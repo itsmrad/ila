@@ -96,7 +96,12 @@ export async function authHeaders(): Promise<Record<string, string>> {
   return { authorization: `Bearer ${token}` };
 }
 
-async function requestJson<T>(
+/**
+ * Authenticated JSON call against the backend, validated against a shared
+ * schema. Exported so every API module (chat, settings) shares one place that
+ * attaches the bearer token, drops a dead session, and maps errors.
+ */
+export async function requestJson<T>(
   schema: ZodType<T>,
   path: string,
   init?: RequestInit,

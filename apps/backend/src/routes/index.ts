@@ -5,6 +5,8 @@ import { healthRouter } from "@/routes/health.route";
 import { sessionRouter } from "@/routes/session.route";
 import { chatRouter } from "@/routes/chat.route";
 import { agentRouter } from "@/routes/agent.route";
+import { integrationsRouter } from "@/routes/integrations.route";
+import { keysRouter } from "@/routes/keys.route";
 
 /**
  * Placeholder router for planned domains. Returns a typed 501 so the API
@@ -47,6 +49,8 @@ apiRouter.use("/session", sessionRouter);
 // Product surfaces
 apiRouter.use("/chat", chatRouter);
 apiRouter.use("/agent", agentRouter);
+apiRouter.use("/integrations", integrationsRouter);
+apiRouter.use("/keys", keysRouter);
 
 // Planned product surfaces (extension automation, memory, user management).
 apiRouter.use("/users", plannedRouter("users"));

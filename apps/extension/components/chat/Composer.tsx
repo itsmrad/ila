@@ -11,7 +11,6 @@ import {
   ChevronDown,
   Crop,
   FileUp,
-  Globe,
   Image as ImageIcon,
   Mic2,
   Paperclip,
@@ -19,9 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { IconButton } from '@ila/ui';
-import { CHAT_LIMITS, type ChatModel, type PageContext } from '@ila/shared';
-import type { AgentSettings } from '../../lib/settings-storage';
-import { ContextCard } from '../ai';
+import { CHAT_LIMITS, type ChatModel } from '@ila/shared';
 import {
   ATTACHMENT_ACCEPT,
   createAttachmentId,
@@ -40,26 +37,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Chip showing which page will be shared with the assistant. */
-function ContextTag({
-  pageContext,
-  onRemove,
-}: {
-  pageContext: PageContext;
-  onRemove: () => void;
-}) {
-  const hostname = (() => {
-    if (!pageContext.url) return pageContext.title ?? 'Current page';
-    try {
-      return new URL(pageContext.url).hostname.replace(/^www\./, '');
-    } catch {
-      return pageContext.title ?? 'Current page';
-    }
-  })();
-
-  return <ContextCard label={hostname} detail={pageContext.url} onRemove={onRemove} />;
 }
 
 /** Model picker backed by the server's allowlist. */
@@ -181,11 +158,6 @@ export interface ComposerProps {
   models: ChatModel[];
   model?: string;
   onModelChange: (id: string) => void;
-  pageContext: PageContext | null;
-  shareContext: boolean;
-  onShareContextChange: (share: boolean) => void;
-  agentSettings: AgentSettings;
-  onAgentSettingChange: (key: keyof AgentSettings, enabled: boolean) => void;
   /** Receives the complete serializable attachment list after each change. */
   onAttachmentsChange?: (attachments: ComposerAttachment[]) => void;
   /** Receives user-facing upload/capture errors, or null when cleared. */
@@ -201,11 +173,6 @@ export function Composer({
   models,
   model,
   onModelChange,
-  pageContext,
-  shareContext,
-  onShareContextChange,
-  agentSettings,
-  onAgentSettingChange,
   onAttachmentsChange,
   onAttachmentError,
 }: ComposerProps) {
@@ -369,15 +336,6 @@ export function Composer({
         className="flex min-h-[108px] flex-col rounded-[12px] bg-[var(--canvas)] px-3 pb-2.5 pt-3 transition-shadow focus-within:shadow-[0_0_0_2px_var(--focus)]"
         onSubmit={onFormSubmit}
       >
-        {shareContext && pageContext && (
-          <div className="mb-2.5">
-            <ContextTag
-              pageContext={pageContext}
-              onRemove={() => onShareContextChange(false)}
-            />
-          </div>
-        )}
-
         {attachments.length > 0 && (
           <div
             className="mb-2.5 flex flex-wrap gap-1.5"
@@ -411,7 +369,6 @@ export function Composer({
             ))}
           </div>
         )}
-
         <textarea
           ref={textarea}
           value={value}
@@ -451,14 +408,6 @@ export function Composer({
             model={model}
             onModelChange={onModelChange}
           />
-          {pageContext && !shareContext && (
-            <IconButton
-              label="Share this page as context"
-              onClick={() => onShareContextChange(true)}
-            >
-              <Globe size={17} />
-            </IconButton>
-          )}
           {showCounter && (
             <span className={`ml-1 text-[10px] tabular-nums ${overLimit ? 'font-medium text-[var(--danger)]' : 'text-[var(--ink-3)]'}`} aria-live="polite">
               {trimmed.length.toLocaleString()} / {CHAT_LIMITS.maxMessageChars.toLocaleString()}

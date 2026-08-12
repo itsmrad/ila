@@ -18,6 +18,7 @@ import type {
   HumanInputResponse,
 } from '@ila/shared';
 import { UtilityBar } from '../../components/layout/UtilityBar';
+import { ModeTabs, tabPanelId, type PanelMode } from '../../components/layout/ModeTabs';
 import { Composer } from '../../components/chat/Composer';
 import { MessageBubble } from '../../components/chat/MessageBubble';
 import { ErrorToast } from '../../components/chat/ErrorToast';
@@ -28,9 +29,18 @@ import { AgentRunPanel, type AgentRunView } from '../../components/agent/AgentRu
 import type { HumanInputSubmission } from '../../components/agent/HumanInputCard';
 import { SettingsPanel } from '../../components/settings/SettingsPanel';
 import { MemoryPanel } from '../../components/memory/MemoryPanel';
+import { ContextBar } from '../../components/context/ContextBar';
+import { AutomationsPanel } from '../../components/automations/AutomationsPanel';
+import { SettingsDrawer } from '../../components/settings/SettingsDrawer';
 import { LoginScreen } from '../../components/auth/LoginScreen';
 import { useAuth } from '../../lib/useAuth';
-import { usePageContext } from '../../lib/usePageContext';
+import { useTabContext } from '../../lib/useTabContext';
+import {
+  DEFAULT_PREFERENCES,
+  loadPreferences,
+  savePreferences,
+  type Preferences,
+} from '../../lib/prefs';
 import {
   ChatApiError,
   deleteChat,
@@ -54,7 +64,6 @@ import {
 import {
   DEFAULT_AGENT_SETTINGS,
   loadAgentSettings,
-  updateAgentSettings,
   type AgentSettings,
 } from '../../lib/settings-storage';
 import { listBrowsingMemory, processPageVisit } from '../../lib/browsing-memory';
@@ -125,12 +134,11 @@ function ChatApp({
     modelRef.current = model;
   }, [model]);
 
-  const { pageContext } = usePageContext();
-  const [shareContext, setShareContext] = useState(true);
+  const { pageContext, ...tabContext } = useTabContext(user.id);
   const pageContextRef = useRef<PageContext | undefined>(undefined);
   useEffect(() => {
-    pageContextRef.current = shareContext ? (pageContext ?? undefined) : undefined;
-  }, [pageContext, shareContext]);
+    pageContextRef.current = pageContext;
+  }, [pageContext]);
 
   // Built once: the transport reads live values through refs so it never needs
   // to be recreated (which would drop an in-flight stream).
@@ -154,8 +162,10 @@ function ChatApp({
 
   const [input, setInput] = useState('');
   const [restored, setRestored] = useState(false);
+  const [panelMode, setPanelMode] = useState<PanelMode>('chat');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [agentSettings, setAgentSettings] = useState<AgentSettings>({
     ...DEFAULT_AGENT_SETTINGS,
@@ -185,6 +195,7 @@ function ChatApp({
   useEffect(() => {
     agentSettingsRef.current = agentSettings;
   }, [agentSettings]);
+  const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(() => {
@@ -218,6 +229,15 @@ function ChatApp({
       title: pageContext.title,
     });
   }, [agentSettings.memory, pageContext?.title, pageContext?.url]);
+
+  useEffect(() => {
+    void loadPreferences().then(setPreferences);
+  }, []);
+
+  const updatePreferences = useCallback((next: Preferences) => {
+    setPreferences(next);
+    void savePreferences(next);
+  }, []);
 
   const messagesRef = useRef<UIMessage[]>(messages);
   useEffect(() => {
@@ -689,7 +709,7 @@ function ChatApp({
           {
             task: text,
             ...(model ? { model } : {}),
-            ...(shareContext && pageContext ? { pageContext } : {}),
+            ...(pageContext ? { pageContext } : {}),
             ...(pageSnapshot ? { pageSnapshot } : {}),
             ...(memory?.length ? { memory } : {}),
             ...(attachments.length
@@ -733,7 +753,7 @@ function ChatApp({
         if (agentAbort.current === planningController) agentAbort.current = null;
       }
     },
-    [agentSettings, clearError, model, pageContext, runPlan, sendMessage, shareContext, updateAgentRun],
+    [agentSettings, clearError, model, pageContext, runPlan, sendMessage, updateAgentRun],
   );
 
   const cancelAgent = useCallback((entryId: string) => {
@@ -751,13 +771,6 @@ function ChatApp({
       error: 'Task stopped by you.',
     }));
   }, [updateAgentRun]);
-
-  const changeAgentSetting = useCallback(
-    (key: keyof AgentSettings, enabled: boolean) => {
-      void updateAgentSettings({ [key]: enabled }).then(setAgentSettings);
-    },
-    [],
-  );
 
   const startNewChat = useCallback(() => {
     agentCancelled.current = true;
@@ -883,121 +896,147 @@ function ChatApp({
         onNewChat={startNewChat}
         onClearConversation={() => void clearConversation()}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         busy={isBusy}
         hasConversation={messages.length > 0 || agentRuns.length > 0}
         user={user}
         onSignOut={onSignOut}
-        onOpenSettings={() => setSettingsOpen(true)}
         onOpenMemory={() => setMemoryOpen(true)}
         memoryEnabled={agentSettings.memory}
         darkMode={darkMode}
         onToggleTheme={() => setDarkMode((value) => !value)}
       />
+      <ModeTabs mode={panelMode} onModeChange={setPanelMode} />
 
-      <div
-        ref={scrollArea}
-        className="flex-1 overflow-auto px-4 pb-6 pt-5 scrollbar-thin md:px-6"
-      >
-        {messages.length > 0 || agentRuns.length > 0 ? (
-          <div className="mx-auto flex w-full max-w-[620px] flex-col gap-6 pb-4">
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                isStreaming={
-                  status === 'streaming' &&
-                  message.id === lastMessage?.id &&
-                  message.role === 'assistant'
-                }
-              />
-            ))}
-            {status === 'submitted' && lastMessage?.role === 'user' && (
-              <MessageBubble
-                message={{ id: 'pending', role: 'assistant', parts: [] }}
-                isStreaming
+      {panelMode === 'chat' ? (
+        <div
+          id={tabPanelId('chat')}
+          role="tabpanel"
+          aria-labelledby="ila-tab-chat"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
+          <div
+            ref={scrollArea}
+            className="flex-1 overflow-auto px-4 pb-6 pt-5 scrollbar-thin md:px-6"
+          >
+            {messages.length > 0 || agentRuns.length > 0 ? (
+              <div className="mx-auto flex w-full max-w-[620px] flex-col gap-6 pb-4">
+                {messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    isStreaming={
+                      status === 'streaming' &&
+                      message.id === lastMessage?.id &&
+                      message.role === 'assistant'
+                    }
+                  />
+                ))}
+                {status === 'submitted' && lastMessage?.role === 'user' && (
+                  <MessageBubble
+                    message={{ id: 'pending', role: 'assistant', parts: [] }}
+                    isStreaming
+                  />
+                )}
+                {agentRuns.map((entry) => (
+                  <div key={entry.id} className="flex flex-col gap-3">
+                    <MessageBubble
+                      message={{
+                        id: `${entry.id}-prompt`,
+                        role: 'user',
+                        parts: [{ type: 'text', text: entry.task }],
+                      }}
+                    />
+                    <AgentRunPanel
+                      run={entry}
+                      onCancel={() => cancelAgent(entry.id)}
+                      onConfirm={() => void runPlan(entry.id, entry, true)}
+                      onHumanInput={(submission) => void submitHumanInput(entry.id, submission)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mx-auto flex min-h-full w-full max-w-[480px] flex-col justify-center py-8">
+                <div className="flex items-center gap-3">
+                  <IlaMark />
+                  <div>
+                    <h1 className="text-[16px] font-semibold tracking-[-0.02em] text-[var(--ink)]">What should I do?</h1>
+                    <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">Ask a question or hand ILA a browser task.</p>
+                  </div>
+                </div>
+                <div className="mt-6 grid gap-2">
+                  <RecommendationCard title="Work with this page" description="Summarize, compare, or extract what matters." onSelect={() => setInput('Summarize this page and highlight the key actions.')} />
+                  <RecommendationCard title="Use the browser" description="Navigate, search, and complete multi-step forms." onSelect={() => setInput('Use the browser to ')} />
+                  <RecommendationCard title="Remember this context" description="Save the useful parts of this page locally." onSelect={() => setInput('Remember the important context from this page.')} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="z-10 flex shrink-0 flex-col gap-2 border-t border-dashed border-[var(--line)] bg-[var(--page)] px-3 pb-3 pt-2.5 md:px-4">
+            {notice && (
+              <ErrorToast message={notice} onDismiss={() => setNotice(null)} />
+            )}
+            {errorMessage && (
+              <ErrorToast
+                message={errorMessage}
+                onDismiss={clearError}
+                {...(canRetry
+                  ? {
+                      onRetry: () => {
+                        clearError();
+                        void regenerate();
+                      },
+                    }
+                  : {})}
               />
             )}
-            {agentRuns.map((entry) => (
-              <div key={entry.id} className="flex flex-col gap-3">
-                <MessageBubble
-                  message={{
-                    id: `${entry.id}-prompt`,
-                    role: 'user',
-                    parts: [{ type: 'text', text: entry.task }],
-                  }}
-                />
-                <AgentRunPanel
-                  run={entry}
-                  onCancel={() => cancelAgent(entry.id)}
-                  onConfirm={() => void runPlan(entry.id, entry, true)}
-                  onHumanInput={(submission) => void submitHumanInput(entry.id, submission)}
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="mx-auto flex min-h-full w-full max-w-[480px] flex-col justify-center py-8">
-            <div className="flex items-center gap-3">
-              <IlaMark />
-              <div>
-                <h1 className="text-[16px] font-semibold tracking-[-0.02em] text-[var(--ink)]">What should I do?</h1>
-                <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">Ask a question or hand ILA a browser task.</p>
-              </div>
-            </div>
-            <div className="mt-6 grid gap-2">
-              <RecommendationCard title="Work with this page" description="Summarize, compare, or extract what matters." onSelect={() => setInput('Summarize this page and highlight the key actions.')} />
-              <RecommendationCard title="Use the browser" description="Navigate, search, and complete multi-step forms." onSelect={() => setInput('Use the browser to ')} />
-              <RecommendationCard title="Remember this context" description="Save the useful parts of this page locally." onSelect={() => setInput('Remember the important context from this page.')} />
-            </div>
-          </div>
-        )}
-      </div>
 
-      <div className="z-10 flex shrink-0 flex-col gap-2 border-t border-dashed border-[var(--line)] bg-[var(--page)] px-3 pb-3 pt-2.5 md:px-4">
-        {notice && (
-          <ErrorToast message={notice} onDismiss={() => setNotice(null)} />
-        )}
-        {errorMessage && (
-          <ErrorToast
-            message={errorMessage}
-            onDismiss={clearError}
-            {...(canRetry
-              ? {
-                  onRetry: () => {
-                    clearError();
-                    void regenerate();
-                  },
-                }
-              : {})}
+            <ContextBar
+              tabs={tabContext.tabs}
+              mode={tabContext.mode}
+              onModeChange={tabContext.setMode}
+              customTabIds={tabContext.customTabIds}
+              onToggleTab={tabContext.toggleTab}
+              selectedTabs={tabContext.selectedTabs}
+              unavailable={tabContext.unavailable}
+            />
+            <Composer
+              value={input}
+              onChange={setInput}
+              onSubmit={submit}
+              onStop={() => {
+                const active = agentRuns.findLast(
+                  (run) =>
+                    run.status === 'planning' ||
+                    run.status === 'awaiting-confirmation' ||
+                    run.status === 'awaiting-input' ||
+                    run.status === 'running',
+                );
+                if (active) cancelAgent(active.id);
+                else stop();
+              }}
+              isBusy={isBusy}
+              models={models}
+              model={model}
+              onModelChange={setModel}
+            />
+          </div>
+        </div>
+      ) : (
+        <div
+          id={tabPanelId('automations')}
+          role="tabpanel"
+          aria-labelledby="ila-tab-automations"
+          className="flex-1 overflow-auto px-4 pb-6 pt-2 scrollbar-thin md:px-6"
+        >
+          <AutomationsPanel
+            mode={tabContext.mode}
+            selectedTabs={tabContext.selectedTabs}
           />
-        )}
-
-        <Composer
-          value={input}
-          onChange={setInput}
-          onSubmit={submit}
-          onStop={() => {
-            const active = agentRuns.findLast(
-              (run) =>
-                run.status === 'planning' ||
-                run.status === 'awaiting-confirmation' ||
-                run.status === 'awaiting-input' ||
-                run.status === 'running',
-            );
-            if (active) cancelAgent(active.id);
-            else stop();
-          }}
-          isBusy={isBusy}
-          models={models}
-          model={model}
-          onModelChange={setModel}
-          pageContext={pageContext}
-          shareContext={shareContext}
-          onShareContextChange={setShareContext}
-          agentSettings={agentSettings}
-          onAgentSettingChange={changeAgentSetting}
-        />
-      </div>
+        </div>
+      )}
 
       <ChatHistoryPanel
         open={historyOpen}
@@ -1015,8 +1054,18 @@ function ChatApp({
           setSettingsOpen(false);
           setMemoryOpen(true);
         }}
+        onOpenAccountSettings={() => {
+          setSettingsOpen(false);
+          setAccountSettingsOpen(true);
+        }}
       />
       <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      <SettingsDrawer
+        open={accountSettingsOpen}
+        onClose={() => setAccountSettingsOpen(false)}
+        preferences={preferences}
+        onPreferencesChange={updatePreferences}
+      />
     </main>
   );
 }

@@ -6,3 +6,4 @@
  */
 export * from "@/db/auth.schema";
 export * from "@/db/chat.schema";
+export * from "@/db/settings.schema";
