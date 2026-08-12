@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup",
+    "test": "bun test",
     "start": "node dist/index.js",
     "compile": "tsc --noEmit",
     "lint": "tsc --noEmit",

@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
+    "build": "bun run test && turbo run build",
+    "test": "turbo run test",
     "compile": "turbo run compile",
     "lint": "turbo run lint",
     "extension:dev": "turbo run dev --filter=@ila/extension",

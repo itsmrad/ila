@@ -14,6 +14,10 @@ import { Composer } from '../../components/chat/Composer';
 import { MessageBubble } from '../../components/chat/MessageBubble';
 import { ErrorToast } from '../../components/chat/ErrorToast';
 import { ChatHistoryPanel } from '../../components/chat/ChatHistoryPanel';
+import type { ComposerAttachment } from '../../components/chat/Composer';
+import { AgentRunPanel, type AgentRunView } from '../../components/agent/AgentRunPanel';
+import { SettingsPanel } from '../../components/settings/SettingsPanel';
+import { MemoryPanel } from '../../components/memory/MemoryPanel';
 import { LoginScreen } from '../../components/auth/LoginScreen';
 import { useAuth } from '../../lib/useAuth';
 import { usePageContext } from '../../lib/usePageContext';
@@ -30,6 +34,15 @@ import {
   saveChatSession,
 } from '../../lib/chat-storage';
 import type { SessionUser } from '../../lib/auth';
+import { planAgentTask } from '../../lib/agent-api';
+import { executeAgentAction, observeActivePage } from '../../lib/agent-runner';
+import {
+  DEFAULT_AGENT_SETTINGS,
+  loadAgentSettings,
+  updateAgentSettings,
+  type AgentSettings,
+} from '../../lib/settings-storage';
+import { listBrowsingMemory, processPageVisit } from '../../lib/browsing-memory';
 import './style.css';
 
 /** Map persisted/loaded messages onto the AI SDK's UI message shape. */
@@ -118,9 +131,28 @@ function ChatApp({
   const [input, setInput] = useState('');
   const [restored, setRestored] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [agentSettings, setAgentSettings] = useState<AgentSettings>({
+    ...DEFAULT_AGENT_SETTINGS,
+  });
+  const [agentRun, setAgentRun] = useState<AgentRunView | null>(null);
+  const agentCancelled = useRef(false);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void loadAgentSettings().then(setAgentSettings);
+  }, []);
+
+  useEffect(() => {
+    if (!agentSettings.memory || !pageContext?.url) return;
+    void processPageVisit({
+      url: pageContext.url,
+      title: pageContext.title,
+    });
+  }, [agentSettings.memory, pageContext?.title, pageContext?.url]);
 
   const messagesRef = useRef<UIMessage[]>(messages);
   useEffect(() => {
@@ -216,13 +248,104 @@ function ChatApp({
   }, [messages]);
 
   const submit = useCallback(
-    (text: string) => {
+    async (text: string, attachments: ComposerAttachment[]) => {
       setNotice(null);
       clearError();
       setInput('');
-      void sendMessage({ text });
+      if (!agentSettings.browserAgent) {
+        await sendMessage({
+          text,
+          ...(attachments.length
+            ? {
+                files: attachments.map((attachment) => ({
+                  type: 'file' as const,
+                  mediaType: attachment.mimeType,
+                  filename: attachment.name,
+                  url: attachment.dataUrl,
+                })),
+              }
+            : {}),
+        });
+        return;
+      }
+
+      agentCancelled.current = false;
+      setAgentRun({ status: 'planning', task: text });
+      try {
+        const pageSnapshot = await observeActivePage().catch(() => undefined);
+        const memory = agentSettings.memory
+          ? (await listBrowsingMemory()).slice(0, 20).map((entry) => ({
+              title: entry.title,
+              url: entry.url,
+              ...(entry.context ? { summary: entry.context.slice(0, 1_000) } : {}),
+            }))
+          : undefined;
+        const plan = await planAgentTask({
+          task: text,
+          ...(model ? { model } : {}),
+          ...(shareContext && pageContext ? { pageContext } : {}),
+          ...(pageSnapshot ? { pageSnapshot } : {}),
+          ...(memory?.length ? { memory } : {}),
+          reasoning: agentSettings.reasoning,
+        });
+        if (agentCancelled.current) return;
+        const next: AgentRunView = {
+          status: agentSettings.skipConfirmation ? 'running' : 'awaiting-confirmation',
+          task: text,
+          plan,
+          completedSteps: 0,
+        };
+        setAgentRun(next);
+        if (agentSettings.skipConfirmation) {
+          await runPlan(next, true);
+        }
+      } catch (cause) {
+        setAgentRun({
+          status: 'failed',
+          task: text,
+          error: cause instanceof Error ? cause.message : 'Could not plan this browser task.',
+        });
+      }
     },
-    [clearError, sendMessage],
+    [agentSettings, clearError, model, pageContext, sendMessage, shareContext],
+  );
+
+  const runPlan = useCallback(async (run: AgentRunView, approved: boolean) => {
+    if (!run.plan) return;
+    agentCancelled.current = false;
+    setAgentRun({ ...run, status: 'running', activeStep: 0, completedSteps: 0 });
+    try {
+      for (let index = 0; index < run.plan.steps.length; index += 1) {
+        if (agentCancelled.current) return;
+        setAgentRun({ ...run, status: 'running', activeStep: index, completedSteps: index });
+        const result = await executeAgentAction(run.plan.steps[index]!.action, approved);
+        if (result && !result.ok) throw new Error(result.error.message);
+        setAgentRun({ ...run, status: 'running', activeStep: index, completedSteps: index + 1 });
+      }
+      setAgentRun({
+        ...run,
+        status: 'complete',
+        completedSteps: run.plan.steps.length,
+      });
+    } catch (cause) {
+      setAgentRun({
+        ...run,
+        status: 'failed',
+        error: cause instanceof Error ? cause.message : 'The browser action failed.',
+      });
+    }
+  }, []);
+
+  const cancelAgent = useCallback(() => {
+    agentCancelled.current = true;
+    setAgentRun(null);
+  }, []);
+
+  const changeAgentSetting = useCallback(
+    (key: keyof AgentSettings, enabled: boolean) => {
+      void updateAgentSettings({ [key]: enabled }).then(setAgentSettings);
+    },
+    [],
   );
 
   const startNewChat = useCallback(() => {
@@ -333,6 +456,9 @@ function ChatApp({
         hasConversation={messages.length > 0}
         user={user}
         onSignOut={onSignOut}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenMemory={() => setMemoryOpen(true)}
+        memoryEnabled={agentSettings.memory}
       />
 
       <div
@@ -368,6 +494,13 @@ function ChatApp({
       </div>
 
       <div className="absolute z-10 left-3 right-3 md:left-[28px] md:right-[28px] bottom-3 md:bottom-[25px] flex flex-col gap-2">
+        {agentRun && (
+          <AgentRunPanel
+            run={agentRun}
+            onCancel={cancelAgent}
+            onConfirm={() => void runPlan(agentRun, true)}
+          />
+        )}
         {notice && (
           <ErrorToast message={notice} onDismiss={() => setNotice(null)} />
         )}
@@ -398,6 +531,8 @@ function ChatApp({
           pageContext={pageContext}
           shareContext={shareContext}
           onShareContextChange={setShareContext}
+          agentSettings={agentSettings}
+          onAgentSettingChange={changeAgentSetting}
         />
       </div>
 
@@ -409,6 +544,16 @@ function ChatApp({
         onDeleted={onHistoryDeleted}
         refreshToken={historyRefresh}
       />
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onChange={setAgentSettings}
+        onOpenMemory={() => {
+          setSettingsOpen(false);
+          setMemoryOpen(true);
+        }}
+      />
+      <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
     </main>
   );
 }

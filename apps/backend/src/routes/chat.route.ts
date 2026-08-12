@@ -172,6 +172,20 @@ chatRouter.post("/", async (req, res, next) => {
       parts: message.parts,
     }));
 
+    if (body.attachments?.length) {
+      const lastUser = [...uiMessages].reverse().find((message) => message.role === "user");
+      if (lastUser) {
+        lastUser.parts.push(
+          ...body.attachments.map((attachment) => ({
+            type: "file" as const,
+            mediaType: attachment.mediaType,
+            filename: attachment.name,
+            url: attachment.dataUrl,
+          })),
+        );
+      }
+    }
+
     // Abort the upstream call on client disconnect or timeout so a dropped
     // side panel cannot leave a paid generation running indefinitely.
     const controller = new AbortController();

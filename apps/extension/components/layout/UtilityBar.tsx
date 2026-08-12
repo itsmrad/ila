@@ -1,4 +1,4 @@
-import { Eraser, History, LogOut, PenLine, Settings2 } from 'lucide-react';
+import { Brain, Eraser, History, LogOut, PenLine, Settings2 } from 'lucide-react';
 import { IconButton } from '@ila/ui';
 import type { SessionUser } from '../../lib/auth';
 
@@ -15,6 +15,9 @@ interface UtilityBarProps {
   hasConversation?: boolean;
   user?: SessionUser | null;
   onSignOut?: () => void;
+  onOpenSettings: () => void;
+  onOpenMemory: () => void;
+  memoryEnabled?: boolean;
 }
 
 function initialOf(user: SessionUser): string {
@@ -30,6 +33,9 @@ export function UtilityBar({
   hasConversation = false,
   user,
   onSignOut,
+  onOpenSettings,
+  onOpenMemory,
+  memoryEnabled = false,
 }: UtilityBarProps) {
   return (
     <header className="h-[76px] px-4 md:px-[30px] pt-[22px] pb-[14px] flex items-center justify-between shrink-0">
@@ -49,7 +55,14 @@ export function UtilityBar({
         </IconButton>
       </div>
       <div className="flex items-center gap-2 md:gap-[17px]">
-        <IconButton label="Settings (coming soon)" disabled>
+        <IconButton
+          label={memoryEnabled ? 'Browsing memory is on' : 'Browsing memory'}
+          onClick={onOpenMemory}
+          className={memoryEnabled ? 'bg-[#eeefff] text-[#6658d9]' : ''}
+        >
+          <Brain size={20} />
+        </IconButton>
+        <IconButton label="Agent settings" onClick={onOpenSettings}>
           <Settings2 size={20} />
         </IconButton>
         {user && (
