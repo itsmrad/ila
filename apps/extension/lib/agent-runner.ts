@@ -21,11 +21,16 @@ export function toAutomationAction(action: BrowserAction): AutomationAction | nu
     case 'forward':
       return { kind: 'forward' };
     case 'click':
-      return { kind: 'click', selector: action.selector };
+      return {
+        kind: 'click',
+        selector: action.selector,
+        ...(action.target ? { target: action.target } : {}),
+      };
     case 'type':
       return {
         kind: 'type',
         selector: action.selector,
+        ...(action.target ? { target: action.target } : {}),
         text: action.text,
         clear: action.clear,
       };

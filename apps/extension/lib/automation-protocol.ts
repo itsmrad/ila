@@ -3,6 +3,7 @@ export const AUTOMATION_CONTENT_MESSAGE = 'ila:automation:content-execute' as co
 export const AUTOMATION_RESULT_MESSAGE = 'ila:automation:result' as const;
 
 export const MAX_SELECTOR_LENGTH = 1_024;
+export const MAX_TARGET_LENGTH = 240;
 export const MAX_TYPE_TEXT_LENGTH = 50_000;
 export const MAX_EXTRACT_LENGTH = 100_000;
 export const MAX_SCROLL_DELTA = 100_000;
@@ -37,11 +38,13 @@ export type ForwardAction = {
 export type ClickAction = {
   kind: 'click';
   selector: string;
+  target?: string;
 };
 
 export type TypeAction = {
   kind: 'type';
   selector: string;
+  target?: string;
   text: string;
   clear?: boolean;
   submit?: boolean;
@@ -250,6 +253,15 @@ export function validateSelector(value: unknown, field = 'selector'): string {
   return selector;
 }
 
+export function validateTarget(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const target = requiredString(value, 'target', MAX_TARGET_LENGTH).trim();
+  if (target.length === 0) {
+    throw new AutomationValidationError('target must not be blank');
+  }
+  return target;
+}
+
 export function validateAutomationAction(value: unknown): AutomationAction {
   if (!isRecord(value) || typeof value.kind !== 'string') {
     throw new AutomationValidationError('action must include a kind');
@@ -272,14 +284,22 @@ export function validateAutomationAction(value: unknown): AutomationAction {
       return { kind: 'back' };
     case 'forward':
       return { kind: 'forward' };
-    case 'click':
-      return { kind: 'click', selector: validateSelector(value.selector) };
+    case 'click': {
+      const target = validateTarget(value.target);
+      return {
+        kind: 'click',
+        selector: validateSelector(value.selector),
+        ...(target ? { target } : {}),
+      };
+    }
     case 'type': {
       const action: TypeAction = {
         kind: 'type',
         selector: validateSelector(value.selector),
         text: validateTypeText(value.text),
       };
+      const target = validateTarget(value.target);
+      if (target) action.target = target;
       const clear = optionalBoolean(value.clear, 'clear');
       const submit = optionalBoolean(value.submit, 'submit');
       if (clear !== undefined) action.clear = clear;

@@ -5,12 +5,14 @@ export const AGENT_LIMITS = {
   maxTaskChars: 4_000,
   maxSteps: 20,
   maxSelectorChars: 500,
+  maxTargetChars: 240,
   maxInputChars: 8_000,
   maxMemoryItems: 20,
   maxMemoryChars: 1_000,
 } as const;
 
 const selectorSchema = z.string().trim().min(1).max(AGENT_LIMITS.maxSelectorChars);
+const targetSchema = z.string().trim().min(1).max(AGENT_LIMITS.maxTargetChars);
 const webUrlSchema = z
   .string()
   .url()
@@ -28,10 +30,17 @@ export const browserActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("reload") }),
   z.object({ type: z.literal("back") }),
   z.object({ type: z.literal("forward") }),
-  z.object({ type: z.literal("click"), selector: selectorSchema }),
+  z.object({
+    type: z.literal("click"),
+    selector: selectorSchema,
+    /** Human-readable accessible intent used if a generated selector is stale. */
+    target: targetSchema.optional(),
+  }),
   z.object({
     type: z.literal("type"),
     selector: selectorSchema,
+    /** Human-readable accessible intent used if a generated selector is stale. */
+    target: targetSchema.optional(),
     text: z.string().max(AGENT_LIMITS.maxInputChars),
     clear: z.boolean().default(true),
   }),

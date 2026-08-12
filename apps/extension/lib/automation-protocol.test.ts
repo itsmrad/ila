@@ -31,4 +31,33 @@ describe('automation protocol security boundary', () => {
       false,
     );
   });
+
+  test('preserves bounded semantic intent and rejects blank targets', () => {
+    const request = validateAutomationRequest({
+      type: 'ila:automation:execute',
+      requestId: 'semantic-target',
+      scope: 'activeTab',
+      action: {
+        kind: 'type',
+        selector: 'input#search',
+        target: 'YouTube search field',
+        text: 'mrbeast',
+      },
+      confirmation: { approved: true },
+    });
+    expect(request.action).toEqual({
+      kind: 'type',
+      selector: 'input#search',
+      target: 'YouTube search field',
+      text: 'mrbeast',
+    });
+    expect(() =>
+      validateAutomationRequest({
+        type: 'ila:automation:execute',
+        requestId: 'blank-target',
+        scope: 'activeTab',
+        action: { kind: 'click', selector: 'button', target: '   ' },
+      }),
+    ).toThrow();
+  });
 });

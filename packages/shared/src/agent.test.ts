@@ -14,7 +14,11 @@ describe("browser action contract", () => {
         {
           id: "focus-search",
           title: "Focus the search box",
-          action: { type: "click", selector: '[aria-label="Search"]' },
+          action: {
+            type: "click",
+            selector: '[aria-label="Search"]',
+            target: "Search button",
+          },
         },
         {
           id: "enter-query",
@@ -22,6 +26,7 @@ describe("browser action contract", () => {
           action: {
             type: "type",
             selector: '[aria-label="Search"]',
+            target: "Site search field",
             text: "browser automation",
             clear: true,
           },
@@ -40,6 +45,16 @@ describe("browser action contract", () => {
     expect(
       browserActionSchema.safeParse({ type: "open_tab", url: "chrome://settings" })
         .success,
+    ).toBe(false);
+  });
+
+  test("bounds semantic target descriptions", () => {
+    expect(
+      browserActionSchema.safeParse({
+        type: "click",
+        selector: "button",
+        target: "x".repeat(241),
+      }).success,
     ).toBe(false);
   });
 

@@ -17,6 +17,19 @@ describe('agent action mapping', () => {
       selector: 'a[href]',
       attribute: 'href',
     });
+    expect(toAutomationAction({
+      type: 'type',
+      selector: 'input#search',
+      target: 'YouTube search field',
+      text: 'mrbeast',
+      clear: true,
+    })).toEqual({
+      kind: 'type',
+      selector: 'input#search',
+      target: 'YouTube search field',
+      text: 'mrbeast',
+      clear: true,
+    });
   });
 
   test('keeps wait local to the runner', () => {

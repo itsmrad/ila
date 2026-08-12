@@ -22,26 +22,212 @@ export class PageActionError extends Error {
   }
 }
 
+type InteractionIntent = 'click' | 'type';
+
+const INTERACTION_READY_TIMEOUT_MS = 5_000;
+const INTERACTION_RETRY_INTERVAL_MS = 100;
+
+const GENERIC_TARGET_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'control',
+  'element',
+  'field',
+  'box',
+  'bar',
+  'input',
+  'button',
+  'link',
+  'textbox',
+]);
+
+function queryRoots(root: Document | Element): ParentNode[] {
+  const roots: ParentNode[] = [root];
+  for (let index = 0; index < roots.length; index += 1) {
+    const current = roots[index]!;
+    for (const element of current.querySelectorAll('*')) {
+      if (element.shadowRoot) roots.push(element.shadowRoot);
+    }
+  }
+  return roots;
+}
+
 export function queryElements(
   document: Document,
   selector: string,
 ): Element[] {
   try {
-    return Array.from(document.querySelectorAll(selector));
+    const matches = queryRoots(document).flatMap((root) =>
+      Array.from(root.querySelectorAll(selector)),
+    );
+    return Array.from(new Set(matches));
   } catch {
     throw new PageActionError('ACTION_FAILED', 'Selector is not valid CSS');
   }
 }
 
+function normalizeWords(value: string): string[] {
+  return value
+    .normalize('NFKD')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** Pure scoring primitive kept exported so resolver behavior can be regression-tested. */
+export function scoreSemanticTarget(target: string, descriptions: string[]): number {
+  const rawTargetWords = normalizeWords(target);
+  const targetWords = rawTargetWords.filter((word) => !GENERIC_TARGET_WORDS.has(word));
+  const meaningfulTarget = targetWords.length > 0 ? targetWords : rawTargetWords;
+  if (meaningfulTarget.length === 0) return 0;
+
+  let best = 0;
+  for (const description of descriptions) {
+    const descriptionWords = normalizeWords(description);
+    if (descriptionWords.length === 0) continue;
+    const targetText = meaningfulTarget.join(' ');
+    const descriptionText = descriptionWords.join(' ');
+    const overlap = meaningfulTarget.filter((word) => descriptionWords.includes(word)).length;
+    let score = overlap * 40;
+    if (descriptionText === targetText) score += 100;
+    else if (descriptionText.includes(targetText) || targetText.includes(descriptionText)) score += 50;
+    score += Math.max(0, 20 - Math.abs(descriptionWords.length - meaningfulTarget.length) * 4);
+    best = Math.max(best, score);
+  }
+  return best;
+}
+
+function isHidden(element: HTMLElement): boolean {
+  let current: HTMLElement | null = element;
+  while (current) {
+    if (current.hidden || current.getAttribute('aria-hidden') === 'true') return true;
+    const style = current.ownerDocument.defaultView?.getComputedStyle(current);
+    if (style?.display === 'none' || style?.visibility === 'hidden') return true;
+    const root = current.getRootNode();
+    current = current.parentElement ?? (root instanceof ShadowRoot ? root.host as HTMLElement : null);
+  }
+  return false;
+}
+
+function isEditableElement(element: Element): element is HTMLElement {
+  if (!(element instanceof HTMLElement) || isElementDisabled(element) || isHidden(element)) {
+    return false;
+  }
+  if (element instanceof HTMLInputElement) {
+    return !element.readOnly && new Set([
+      'email',
+      'number',
+      'search',
+      'tel',
+      'text',
+      'url',
+    ]).has(element.type);
+  }
+  return (
+    (element instanceof HTMLTextAreaElement && !element.readOnly) ||
+    element.isContentEditable
+  );
+}
+
+function isClickableElement(element: Element): element is HTMLElement {
+  if (!(element instanceof HTMLElement) || isElementDisabled(element) || isHidden(element)) {
+    return false;
+  }
+  return element.matches([
+    'a[href]',
+    'button',
+    'input[type="button"]',
+    'input[type="submit"]',
+    'input[type="reset"]',
+    'summary',
+    '[role="button"]',
+    '[role="link"]',
+    '[role="menuitem"]',
+    '[role="tab"]',
+    '[onclick]',
+  ].join(','));
+}
+
+function accessibleDescriptions(element: HTMLElement): string[] {
+  const values = [
+    element.getAttribute('aria-label'),
+    element.getAttribute('placeholder'),
+    element.getAttribute('name'),
+    element.id,
+    element.getAttribute('title'),
+    element.getAttribute('role'),
+    element instanceof HTMLInputElement ? element.value : null,
+    element.innerText || element.textContent,
+  ];
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    values.push(...Array.from(element.labels ?? []).map((label) => label.textContent));
+  }
+  return values.flatMap((value) => {
+    const trimmed = value?.replace(/\s+/g, ' ').trim().slice(0, 240);
+    return trimmed ? [trimmed] : [];
+  });
+}
+
+function findSemanticElement(
+  document: Document,
+  target: string,
+  intent: InteractionIntent,
+  candidates?: Element[],
+): Element | undefined {
+  const candidateSelector = intent === 'type'
+    ? 'input:not([type="hidden"]):not([type="password"]),textarea,[contenteditable="true"],[role="textbox"],[role="searchbox"]'
+    : 'a[href],button,input[type="button"],input[type="submit"],input[type="reset"],summary,[role="button"],[role="link"],[role="menuitem"],[role="tab"],[onclick]';
+  const available = candidates ?? queryElements(document, candidateSelector);
+  const ranked = available
+    .filter((element) => intent === 'type' ? isEditableElement(element) : isClickableElement(element))
+    .map((element) => ({
+      element,
+      score: scoreSemanticTarget(target, accessibleDescriptions(element as HTMLElement)),
+    }))
+    .filter(({ score }) => score >= 40)
+    .sort((left, right) => right.score - left.score);
+
+  if (ranked.length === 0) return undefined;
+  if (ranked.length > 1 && ranked[0]!.score === ranked[1]!.score) {
+    throw new PageActionError(
+      'AMBIGUOUS_SELECTOR',
+      `More than one control matches “${target}”`,
+    );
+  }
+  return ranked[0]!.element;
+}
+
 export function querySingleElement(
   document: Document,
   selector: string,
+  target?: string,
+  intent?: InteractionIntent,
 ): Element {
-  const elements = queryElements(document, selector);
+  let elements: Element[] = [];
+  try {
+    elements = queryElements(document, selector);
+  } catch (error) {
+    if (!target || !intent) throw error;
+  }
+  if (elements.length === 1) return elements[0]!;
+  if (target && intent) {
+    const semantic = findSemanticElement(
+      document,
+      target,
+      intent,
+      elements.length > 1 ? elements : undefined,
+    );
+    if (semantic) return semantic;
+  }
   if (elements.length === 0) {
     throw new PageActionError(
       'ELEMENT_NOT_FOUND',
-      'No element matches the selector',
+      target
+        ? `Could not find the ${target} control on this page`
+        : 'No element matches the selector',
     );
   }
   if (elements.length > 1) {
@@ -50,7 +236,30 @@ export function querySingleElement(
       'Selector must match exactly one element',
     );
   }
-  return elements[0];
+  return elements[0]!;
+}
+
+async function queryReadyElement(
+  document: Document,
+  selector: string,
+  target: string | undefined,
+  intent: InteractionIntent,
+): Promise<Element> {
+  const deadline = Date.now() + INTERACTION_READY_TIMEOUT_MS;
+  while (true) {
+    try {
+      return querySingleElement(document, selector, target, intent);
+    } catch (error) {
+      if (
+        !(error instanceof PageActionError) ||
+        error.code !== 'ELEMENT_NOT_FOUND' ||
+        Date.now() >= deadline
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, INTERACTION_RETRY_INTERVAL_MS));
+    }
+  }
 }
 
 function isElementDisabled(element: HTMLElement): boolean {
@@ -80,7 +289,6 @@ function typeIntoElement(
     const supportedTypes = new Set([
       'email',
       'number',
-      'password',
       'search',
       'tel',
       'text',
@@ -175,7 +383,7 @@ export function buildPageOutline(root: Element): string {
     'h3',
   ].join(',');
 
-  return Array.from(root.querySelectorAll(selector))
+  return queryRoots(root).flatMap((queryRoot) => Array.from(queryRoot.querySelectorAll(selector)))
     .slice(0, 250)
     .flatMap((node) => {
       if (!(node instanceof HTMLElement) || node.hidden || node.getAttribute('aria-hidden') === 'true') {
@@ -226,15 +434,24 @@ export function extractPageData(
   return { values, truncated };
 }
 
-export function executePageAction(
+export async function executePageAction(
   action: PageAutomationAction,
   document: Document,
   window: Window,
-): ExtractedPageData | undefined {
+): Promise<ExtractedPageData | undefined> {
   switch (action.kind) {
     case 'click': {
-      const element = querySingleElement(document, action.selector);
-      if (!(element instanceof HTMLElement) || isElementDisabled(element)) {
+      const element = await queryReadyElement(
+        document,
+        action.selector,
+        action.target,
+        'click',
+      );
+      if (
+        !(element instanceof HTMLElement) ||
+        isElementDisabled(element) ||
+        isHidden(element)
+      ) {
         throw new PageActionError(
           'UNSUPPORTED_ELEMENT',
           'Target is not an enabled clickable element',
@@ -246,7 +463,7 @@ export function executePageAction(
     }
     case 'type':
       typeIntoElement(
-        querySingleElement(document, action.selector),
+        await queryReadyElement(document, action.selector, action.target, 'type'),
         action.text,
         action.clear ?? true,
         action.submit ?? false,
@@ -271,11 +488,11 @@ export function executePageAction(
   }
 }
 
-export function executeContentRequest(
+export async function executeContentRequest(
   request: AutomationContentRequest,
   document: Document,
   window: Window,
-): AutomationResponse {
+): Promise<AutomationResponse> {
   const confirmation = request.confirmation;
   if (window.location.href !== request.expectedUrl) {
     return {
@@ -291,7 +508,7 @@ export function executeContentRequest(
   }
 
   try {
-    const data = executePageAction(request.action, document, window);
+    const data = await executePageAction(request.action, document, window);
     return {
       type: AUTOMATION_RESULT_MESSAGE,
       requestId: request.requestId,
