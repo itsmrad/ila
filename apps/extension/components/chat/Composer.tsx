@@ -7,24 +7,21 @@ import {
 } from 'react';
 import {
   ArrowUp,
-  Bot,
-  Brain,
   Check,
+  ChevronDown,
   Crop,
   FileUp,
   Globe,
   Image as ImageIcon,
   Mic2,
   Paperclip,
-  SlidersHorizontal,
-  Database,
-  ShieldOff,
   Square,
   X,
 } from 'lucide-react';
 import { IconButton } from '@ila/ui';
 import { CHAT_LIMITS, type ChatModel, type PageContext } from '@ila/shared';
 import type { AgentSettings } from '../../lib/settings-storage';
+import { ContextCard } from '../ai';
 import {
   ATTACHMENT_ACCEPT,
   dataUrlByteLength,
@@ -82,22 +79,7 @@ function ContextTag({
     }
   })();
 
-  return (
-    <div className="group relative flex items-center gap-2 w-fit h-[34px] px-[14px] mb-3 rounded-[12px] bg-[#f0f0f0] border border-[#e5e5e5] text-[#4e4e4e] text-[13px] font-medium transition-all hover:bg-[#e8e8e8] shadow-sm">
-      <Globe size={16} className="text-gray-500" aria-hidden="true" />
-      <span className="max-w-[160px] truncate" title={pageContext.url}>
-        {hostname}
-      </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ml-1 w-5 h-5 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center transition-all cursor-pointer"
-        aria-label="Stop sharing this page"
-      >
-        <X size={12} className="text-gray-600" aria-hidden="true" />
-      </button>
-    </div>
-  );
+  return <ContextCard label={hostname} detail={pageContext.url} onRemove={onRemove} />;
 }
 
 /** Model picker backed by the server's allowlist. */
@@ -105,14 +87,10 @@ function ModelMenu({
   models,
   model,
   onModelChange,
-  agentSettings,
-  onAgentSettingChange,
 }: {
   models: ChatModel[];
   model?: string;
   onModelChange: (id: string) => void;
-  agentSettings: AgentSettings;
-  onAgentSettingChange: (key: keyof AgentSettings, enabled: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -159,23 +137,22 @@ function ModelMenu({
 
   return (
     <div className="relative" ref={menuRef}>
-      <IconButton
+      <button
         ref={trigger}
-        label="Model"
+        type="button"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={open ? 'bg-[#f0f0f0] text-[#303030]' : ''}
+        className={`inline-flex h-8 items-center gap-1.5 rounded-[9px] px-2.5 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus)] ${open ? 'bg-[var(--field)] text-[var(--ink)]' : 'text-[var(--ink-2)] hover:bg-[var(--hover-2)]'}`}
       >
-        <SlidersHorizontal size={20} />
-      </IconButton>
+        Model
+        <ChevronDown size={12} className={`text-[var(--ink-3)] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
 
       {open && (
-        <div className="absolute bottom-[calc(100%+12px)] left-0 w-[240px] p-2 rounded-[24px] bg-white border border-[#e8e8e8] shadow-[0_16px_40px_#00000018,0_4px_12px_#00000008] z-20 flex flex-col gap-1">
-          <div
-            id="model-group-label"
-            className="px-3 pt-2 pb-1 text-[11px] font-bold text-gray-400 uppercase tracking-wider"
-          >
-            Model
+        <div className="absolute bottom-[calc(100%+10px)] left-0 z-20 flex w-[250px] flex-col gap-1 rounded-[15px] bg-[var(--surface)] p-2 shadow-[var(--shadow-overlay)]">
+          <div className="px-2.5 pb-1 pt-1.5">
+            <div id="model-group-label" className="text-[10.5px] font-medium text-[var(--ink-3)]">Choose model</div>
+            <div className="mt-0.5 text-[10px] text-[var(--ink-3)]">Kimi K3 is recommended for browser tasks.</div>
           </div>
           {/*
             A group of toggle buttons rather than role="menu": Tab and
@@ -184,7 +161,7 @@ function ModelMenu({
           */}
           <div ref={groupRef} role="group" aria-labelledby="model-group-label">
             {models.length === 0 && (
-              <div className="px-3 py-2 text-[12px] text-[#96949d]">Server default</div>
+              <div className="px-2.5 py-2 text-[12px] text-[var(--ink-3)]">Server default</div>
             )}
             {models.map((option) => {
               const selected = option.id === model;
@@ -194,47 +171,18 @@ function ModelMenu({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => select(option.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left text-gray-700 hover:bg-[#f5f5f5] rounded-xl transition-colors font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                  className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[var(--ink-2)] transition-colors hover:bg-[var(--hover-2)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
                 >
                   <span className="w-[18px] shrink-0">
-                    {selected && <Check size={16} className="text-[#6d5efc]" />}
+                    {selected && <Check size={14} className="text-[var(--accent)]" />}
                   </span>
-                  <span className="truncate" title={option.id}>
+                  <span className="min-w-0 flex-1 truncate" title={option.id}>
                     {option.label}
                   </span>
+                  {option.default && <span className="rounded-full bg-[var(--accent-tint)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--accent)]">Best</span>}
                 </button>
               );
             })}
-          </div>
-          <div className="mx-2 my-2 h-px bg-[#ececf0]" />
-          <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-            Capabilities
-          </div>
-          <div className="space-y-0.5 px-1 pb-1">
-            {([
-              ['reasoning', 'Reasoning', Brain],
-              ['browserAgent', 'Browser agent', Bot],
-              ['memory', 'Memory', Database],
-              ['skipConfirmation', 'Skip confirmation', ShieldOff],
-            ] as const).map(([key, label, Icon]) => (
-              <button
-                key={key}
-                type="button"
-                role="switch"
-                aria-checked={agentSettings[key]}
-                onClick={() => onAgentSettingChange(key, !agentSettings[key])}
-                className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left text-[12px] font-medium text-[#55545d] transition-colors hover:bg-[#f5f5f7] focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
-              >
-                <Icon size={15} className={agentSettings[key] ? 'text-[#6557d8]' : 'text-[#a2a1a8]'} />
-                <span className="flex-1">{label}</span>
-                <span
-                  aria-hidden="true"
-                  className={`relative h-[18px] w-8 rounded-full transition-colors ${agentSettings[key] ? 'bg-[#6d5efc]' : 'bg-[#d8d8dd]'}`}
-                >
-                  <span className={`absolute top-[3px] h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${agentSettings[key] ? 'translate-x-[17px]' : 'translate-x-[3px]'}`} />
-                </span>
-              </button>
-            ))}
           </div>
         </div>
       )}
@@ -436,43 +384,45 @@ export function Composer({
   };
 
   return (
-    <div className="p-2 md:p-[10px] border border-[#dedede] rounded-[30px] md:rounded-[35px] bg-[#fafafa]/80 backdrop-blur-md shadow-[0_8px_28px_#00000012,0_2px_5px_#00000018]">
+    <div className="rounded-[18px] bg-[var(--surface)] p-2 shadow-[var(--shadow-overlay)]">
       <form
-        className="flex flex-col min-h-[100px] p-3 md:px-[18px] md:pt-[16px] md:pb-[14px] border border-[#dedede] rounded-[22px] md:rounded-[26px] bg-white shadow-inner transition-colors focus-within:border-[#a9baf6] focus-within:shadow-[0_0_0_2px_#a9baf633]"
+        className="flex min-h-[108px] flex-col rounded-[12px] bg-[var(--canvas)] px-3 pb-2.5 pt-3 transition-shadow focus-within:shadow-[0_0_0_2px_var(--focus)]"
         onSubmit={onFormSubmit}
       >
         {shareContext && pageContext && (
-          <ContextTag
-            pageContext={pageContext}
-            onRemove={() => onShareContextChange(false)}
-          />
+          <div className="mb-2.5">
+            <ContextTag
+              pageContext={pageContext}
+              onRemove={() => onShareContextChange(false)}
+            />
+          </div>
         )}
 
         {attachments.length > 0 && (
           <div
-            className="mb-3 flex flex-wrap gap-2"
+            className="mb-2.5 flex flex-wrap gap-1.5"
             aria-label="Attachments"
           >
             {attachments.map((attachment) => (
               <div
                 key={attachment.id}
-                className="group flex h-[34px] max-w-full items-center gap-2 rounded-[12px] border border-[#e5e5e5] bg-[#f5f5f5] px-3 text-[12px] font-medium text-[#555] shadow-sm"
+                className="group flex h-7 max-w-full items-center gap-1.5 rounded-[9px] bg-[var(--field)] px-2.5 text-[11px] font-medium text-[var(--ink-2)]"
               >
                 {attachment.kind === 'capture' ? (
-                  <ImageIcon size={15} className="shrink-0 text-gray-500" aria-hidden="true" />
+                  <ImageIcon size={13} className="shrink-0 text-[var(--ink-3)]" aria-hidden="true" />
                 ) : (
-                  <Paperclip size={15} className="shrink-0 text-gray-500" aria-hidden="true" />
+                  <Paperclip size={13} className="shrink-0 text-[var(--ink-3)]" aria-hidden="true" />
                 )}
                 <span className="max-w-[150px] truncate" title={attachment.name}>
                   {attachment.name}
                 </span>
-                <span className="shrink-0 text-[10px] text-[#999]">
+                <span className="shrink-0 text-[10px] text-[var(--ink-3)]">
                   {formatFileSize(attachment.size)}
                 </span>
                 <button
                   type="button"
                   onClick={() => removeAttachment(attachment.id)}
-                  className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-full bg-black/5 transition-colors hover:bg-black/10 focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                  className="grid size-5 shrink-0 place-items-center rounded-full text-[var(--ink-3)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
                   aria-label={`Remove ${attachment.name}`}
                 >
                   <X size={12} aria-hidden="true" />
@@ -501,59 +451,38 @@ export function Composer({
           }}
           placeholder="Ask ILA about this page…"
           aria-label="Message ILA"
-          aria-describedby="composer-hint"
           aria-invalid={overLimit}
           maxLength={CHAT_LIMITS.maxMessageChars * 2}
-          className="w-full min-h-[44px] p-0 resize-none border-0 outline-none text-[#222] bg-transparent leading-[1.45] text-base md:text-[17px] placeholder-[#aaa]"
+          className="min-h-[42px] w-full resize-none border-0 bg-transparent p-0 text-[13.5px] leading-[1.55] text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
         />
-
-        <div
-          id="composer-hint"
-          className="mt-1 mb-2 flex items-center justify-between gap-3 text-[11px] text-[#a8a8a8]"
-        >
-          <span>
-            <kbd className="font-sans font-medium text-[#8a8a8a]">Enter</kbd> to
-            send ·{' '}
-            <kbd className="font-sans font-medium text-[#8a8a8a]">
-              Shift + Enter
-            </kbd>{' '}
-            for a new line
-          </span>
-          {showCounter && (
-            <span
-              className={overLimit ? 'font-medium text-[#e5484d]' : undefined}
-              aria-live="polite"
-            >
-              {trimmed.length.toLocaleString()} /{' '}
-              {CHAT_LIMITS.maxMessageChars.toLocaleString()}
-            </span>
-          )}
-        </div>
 
         {attachmentError && (
           <p
-            className="mb-2 text-[12px] font-medium text-[#c73f45]"
+            className="mb-2 text-[11.5px] font-medium text-[var(--danger)]"
             role="alert"
           >
             {attachmentError}
           </p>
         )}
 
-        <div className="flex items-center gap-1 md:gap-[5px] mt-auto">
+        <div className="mt-2 flex items-center gap-0.5">
           <ModelMenu
             models={models}
             model={model}
             onModelChange={onModelChange}
-            agentSettings={agentSettings}
-            onAgentSettingChange={onAgentSettingChange}
           />
           {pageContext && !shareContext && (
             <IconButton
               label="Share this page as context"
               onClick={() => onShareContextChange(true)}
             >
-              <Globe size={20} />
+              <Globe size={17} />
             </IconButton>
+          )}
+          {showCounter && (
+            <span className={`ml-1 text-[10px] tabular-nums ${overLimit ? 'font-medium text-[var(--danger)]' : 'text-[var(--ink-3)]'}`} aria-live="polite">
+              {trimmed.length.toLocaleString()} / {CHAT_LIMITS.maxMessageChars.toLocaleString()}
+            </span>
           )}
           <div className="flex-1" />
           <input
@@ -574,7 +503,7 @@ export function Composer({
               isAddingFiles || attachments.length >= MAX_ATTACHMENT_COUNT
             }
           >
-            <FileUp size={20} />
+            <FileUp size={17} />
           </IconButton>
           <IconButton
             label={isCapturing ? 'Capturing visible tab' : 'Capture visible tab'}
@@ -586,17 +515,17 @@ export function Composer({
               attachments.length >= MAX_ATTACHMENT_COUNT
             }
           >
-            <Crop size={20} />
+            <Crop size={17} />
           </IconButton>
           <IconButton label="Voice input (coming soon)" disabled>
-            <Mic2 size={20} />
+            <Mic2 size={17} />
           </IconButton>
 
           {isBusy ? (
             <button
               type="button"
               onClick={onStop}
-              className="w-[38px] h-[38px] md:w-[47px] md:h-[47px] p-0 border-0 rounded-[12px] md:rounded-[15px] flex items-center justify-center bg-[#303030] hover:bg-[#181818] text-white cursor-pointer transition-colors ml-1 shadow-sm"
+              className="ml-1 grid size-9 place-items-center rounded-[10px] bg-[var(--ink)] text-[var(--canvas)] transition-[opacity,transform] hover:opacity-90 active:scale-[.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               aria-label="Stop generating"
             >
               <Square size={16} strokeWidth={3} fill="currentColor" />
@@ -604,11 +533,11 @@ export function Composer({
           ) : (
             <button
               type="submit"
-              className="w-[38px] h-[38px] md:w-[47px] md:h-[47px] p-0 border-0 rounded-[12px] md:rounded-[15px] flex items-center justify-center bg-[#aebcf0] hover:bg-[#97a8e8] text-white cursor-pointer transition-colors disabled:opacity-55 disabled:cursor-not-allowed ml-1 shadow-sm"
+              className="ml-1 grid size-9 place-items-center rounded-[10px] bg-[var(--accent)] text-white transition-[opacity,transform] hover:opacity-90 active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               disabled={!canSend}
               aria-label="Send message"
             >
-              <ArrowUp size={22} strokeWidth={2.6} />
+              <ArrowUp size={18} strokeWidth={2.5} />
             </button>
           )}
         </div>

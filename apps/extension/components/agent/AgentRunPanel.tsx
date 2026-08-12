@@ -1,15 +1,12 @@
-import {
-  AlertTriangle,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  LoaderCircle,
-  Play,
-  Square,
-  X,
-} from 'lucide-react';
-import type { AgentPlan } from '@ila/shared';
+import { AlertCircle, CheckCircle2, ChevronDown, Square, X } from 'lucide-react';
+import type { AgentPlan, AgentPlanStep } from '@ila/shared';
 import { useState } from 'react';
+import {
+  ApprovalCard,
+  LoadingState,
+  TaskRow,
+  ThinkingTrace,
+} from '../ai';
 
 export type AgentRunStatus = 'planning' | 'awaiting-confirmation' | 'running' | 'complete' | 'failed';
 
@@ -20,6 +17,13 @@ export interface AgentRunView {
   activeStep?: number;
   completedSteps?: number;
   error?: string;
+  summary?: string;
+  thinking?: boolean;
+  execution?: Array<{
+    step: AgentPlanStep;
+    status: 'running' | 'succeeded' | 'failed';
+    error?: string;
+  }>;
 }
 
 interface AgentRunPanelProps {
@@ -28,114 +32,78 @@ interface AgentRunPanelProps {
   onCancel: () => void;
 }
 
-function statusLabel(status: AgentRunStatus): string {
-  switch (status) {
-    case 'planning':
-      return 'Planning';
-    case 'awaiting-confirmation':
-      return 'Ready to run';
-    case 'running':
-      return 'Controlling browser';
-    case 'complete':
-      return 'Completed';
-    case 'failed':
-      return 'Needs attention';
-  }
-}
-
 export function AgentRunPanel({ run, onConfirm, onCancel }: AgentRunPanelProps) {
   const [expanded, setExpanded] = useState(true);
-  const completed = run.completedSteps ?? 0;
+  const rows: Array<{
+    step: AgentPlanStep;
+    status: 'pending' | 'running' | 'succeeded' | 'failed';
+    error?: string;
+  }> = run.execution?.length
+    ? run.execution
+    : run.plan?.steps.map((step) => ({
+        step,
+        status: 'pending' as const,
+      })) ?? [];
+
+  if (run.status === 'awaiting-confirmation') {
+    return (
+      <ApprovalCard
+        title={run.plan?.summary ?? 'Run this browser task?'}
+        description="ILA will operate the active tab, observe each result, and stop if the page no longer matches the task."
+        onApprove={onConfirm}
+        onCancel={onCancel}
+      >
+        <ol className="divide-y divide-dashed divide-[var(--line)]">
+          {rows.map(({ step, status, error }, index) => (
+            <TaskRow key={`${step.id}-${index}`} title={step.title} action={step.action} status={status} {...(error ? { error } : {})} />
+          ))}
+        </ol>
+      </ApprovalCard>
+    );
+  }
 
   return (
-    <section
-      className="overflow-hidden rounded-[22px] border border-[#dfe3f5] bg-white shadow-[0_12px_34px_#2c35610f,0_2px_8px_#0000000a]"
-      aria-label="Browser agent run"
-      aria-live="polite"
-    >
-      <div className="flex items-center gap-3 px-4 py-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eeefff] text-[#6758dc]">
-          {run.status === 'planning' || run.status === 'running' ? (
-            <LoaderCircle size={18} className="animate-spin motion-reduce:animate-none" />
-          ) : run.status === 'complete' ? (
-            <Check size={18} strokeWidth={2.5} />
-          ) : run.status === 'failed' ? (
-            <AlertTriangle size={18} />
-          ) : (
-            <Play size={17} fill="currentColor" />
-          )}
+    <section className="py-2" aria-label="Browser agent activity" aria-live="polite">
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px] ${run.status === 'failed' ? 'bg-[var(--danger-tint)] text-[var(--danger)]' : run.status === 'complete' ? 'bg-[var(--success-tint)] text-[var(--success)]' : 'bg-[var(--accent-tint)] text-[var(--accent)]'}`}>
+          {run.status === 'failed' ? <AlertCircle size={14} /> : run.status === 'complete' ? <CheckCircle2 size={14} /> : <span className="size-2 rounded-[2px] bg-current motion-safe:animate-pulse" />}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-bold uppercase tracking-[0.11em] text-[#8b86aa]">
-            {statusLabel(run.status)}
-          </div>
-          <div className="mt-0.5 truncate text-[13px] font-semibold text-[#2b2b33]" title={run.task}>
-            {run.plan?.summary ?? run.task}
-          </div>
+          {run.status === 'planning' ? (
+            <LoadingState label="Planning browser task" />
+          ) : run.status === 'running' ? (
+            <ThinkingTrace label={run.thinking ? 'Observing the page' : 'Using the browser'} active={run.thinking} />
+          ) : (
+            <div className="text-[12.5px] font-medium text-[var(--ink)]">
+              {run.status === 'complete' ? 'Task completed' : 'Task needs attention'}
+            </div>
+          )}
+          <p className="mt-1 text-[13px] leading-relaxed text-[var(--ink-2)]">
+            {run.summary ?? run.plan?.summary ?? run.task}
+          </p>
         </div>
-        {run.plan && (
-          <button
-            type="button"
-            onClick={() => setExpanded((current) => !current)}
-            className="grid h-8 w-8 place-items-center rounded-[10px] text-[#777582] transition-colors hover:bg-[#f4f4f7] focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse agent steps' : 'Expand agent steps'}
-          >
-            {expanded ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
+        {(rows.length > 0 || run.status === 'running') && (
+          <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={expanded ? 'Collapse task activity' : 'Expand task activity'} className="grid size-7 shrink-0 place-items-center rounded-[7px] text-[var(--ink-3)] transition-colors hover:bg-[var(--hover-2)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]">
+            <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
           </button>
         )}
       </div>
 
-      {expanded && run.plan && (
-        <ol className="mx-3 mb-3 space-y-1 rounded-[16px] bg-[#f7f7fa] p-2">
-          {run.plan.steps.map((step, index) => {
-            const isComplete = index < completed;
-            const isActive = run.status === 'running' && index === run.activeStep;
-            return (
-              <li key={step.id} className="flex items-start gap-2.5 rounded-[12px] px-2.5 py-2 text-[12px]">
-                <span
-                  className={`mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[10px] font-bold ${
-                    isComplete
-                      ? 'bg-[#dff5e8] text-[#27834d]'
-                      : isActive
-                        ? 'bg-[#e5e7ff] text-[#6254d5]'
-                        : 'bg-white text-[#9897a0]'
-                  }`}
-                >
-                  {isComplete ? <Check size={11} strokeWidth={3} /> : index + 1}
-                </span>
-                <span className={isActive ? 'font-semibold text-[#3b3850]' : 'text-[#67666f]'}>
-                  {step.title}
-                </span>
-              </li>
-            );
-          })}
+      {expanded && rows.length > 0 && (
+        <ol className="ml-10 mt-2 divide-y divide-dashed divide-[var(--line)]">
+          {rows.map(({ step, status, error }, index) => (
+            <TaskRow key={`${step.id}-${index}`} title={step.title} action={step.action} status={status} {...(error ? { error } : {})} />
+          ))}
         </ol>
       )}
 
-      {run.error && <p className="mx-4 mb-3 text-[12px] text-[#c8444c]">{run.error}</p>}
+      {run.error && <p className="ml-10 mt-2 text-[12px] leading-relaxed text-[var(--danger)]">{run.error}</p>}
 
-      {(run.status === 'awaiting-confirmation' || run.status === 'running' || run.status === 'planning') && (
-        <div className="flex items-center justify-end gap-2 border-t border-[#eeeeF3] px-3 py-2.5">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="inline-flex h-9 items-center gap-1.5 rounded-[11px] px-3 text-[12px] font-semibold text-[#66646c] transition-colors hover:bg-[#f3f3f5] focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
-          >
-            {run.status === 'running' ? <Square size={12} fill="currentColor" /> : <X size={14} />}
-            {run.status === 'running' ? 'Stop' : 'Cancel'}
-          </button>
-          {run.status === 'awaiting-confirmation' && (
-            <button
-              type="button"
-              onClick={onConfirm}
-              className="inline-flex h-9 items-center gap-1.5 rounded-[11px] bg-[#6154d8] px-3.5 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-[#5145c5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7468e2]"
-            >
-              <Play size={13} fill="currentColor" />
-              Run steps
-            </button>
-          )}
-        </div>
+      {(run.status === 'planning' || run.status === 'running') && (
+        <button type="button" onClick={onCancel} className="ml-9 mt-2 inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] text-[var(--ink-3)] transition-colors hover:bg-[var(--hover-2)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]">
+          {run.status === 'running' ? <Square size={10} fill="currentColor" /> : <X size={12} />}
+          {run.status === 'running' ? 'Stop task' : 'Cancel'}
+        </button>
       )}
     </section>
   );

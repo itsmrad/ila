@@ -103,7 +103,7 @@ const envSchema = z
     /** Provider label used in AI SDK model ids and logs. */
     AI_PROVIDER_NAME: z.string().min(1).max(40).default("openrouter"),
     /** Default model id used when the client does not request one. */
-    AI_MODEL: z.string().min(1).max(120).default("openai/gpt-4o-mini"),
+    AI_MODEL: z.string().min(1).max(120).default("moonshotai/kimi-k3"),
     /**
      * Allowlist of model ids a client may request. Defaults to `AI_MODEL` only.
      * A client-supplied model is never forwarded unless it appears here.

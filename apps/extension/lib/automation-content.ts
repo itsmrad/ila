@@ -22,7 +22,7 @@ export class PageActionError extends Error {
   }
 }
 
-type InteractionIntent = 'click' | 'type';
+type InteractionIntent = 'click' | 'type' | 'select' | 'check';
 
 const INTERACTION_READY_TIMEOUT_MS = 5_000;
 const INTERACTION_RETRY_INTERVAL_MS = 100;
@@ -100,6 +100,13 @@ export function scoreSemanticTarget(target: string, descriptions: string[]): num
   return best;
 }
 
+export function requestedOrdinal(target: string): 'first' | 'last' | undefined {
+  const words = normalizeWords(target);
+  if (words.includes('first') || words.includes('top')) return 'first';
+  if (words.includes('last') || words.includes('bottom')) return 'last';
+  return undefined;
+}
+
 function isHidden(element: HTMLElement): boolean {
   let current: HTMLElement | null = element;
   while (current) {
@@ -129,6 +136,19 @@ function isEditableElement(element: Element): element is HTMLElement {
   return (
     (element instanceof HTMLTextAreaElement && !element.readOnly) ||
     element.isContentEditable
+  );
+}
+
+function isSelectableElement(element: Element): element is HTMLSelectElement {
+  return element instanceof HTMLSelectElement && !element.disabled && !isHidden(element);
+}
+
+function isCheckableElement(element: Element): element is HTMLInputElement {
+  return (
+    element instanceof HTMLInputElement &&
+    (element.type === 'checkbox' || element.type === 'radio') &&
+    !element.disabled &&
+    !isHidden(element)
   );
 }
 
@@ -179,10 +199,22 @@ function findSemanticElement(
 ): Element | undefined {
   const candidateSelector = intent === 'type'
     ? 'input:not([type="hidden"]):not([type="password"]),textarea,[contenteditable="true"],[role="textbox"],[role="searchbox"]'
-    : 'a[href],button,input[type="button"],input[type="submit"],input[type="reset"],summary,[role="button"],[role="link"],[role="menuitem"],[role="tab"],[onclick]';
+    : intent === 'select'
+      ? 'select'
+      : intent === 'check'
+        ? 'input[type="checkbox"],input[type="radio"]'
+        : 'a[href],button,input[type="button"],input[type="submit"],input[type="reset"],summary,[role="button"],[role="link"],[role="menuitem"],[role="tab"],[onclick]';
   const available = candidates ?? queryElements(document, candidateSelector);
   const ranked = available
-    .filter((element) => intent === 'type' ? isEditableElement(element) : isClickableElement(element))
+    .filter((element) =>
+      intent === 'type'
+        ? isEditableElement(element)
+        : intent === 'select'
+          ? isSelectableElement(element)
+          : intent === 'check'
+            ? isCheckableElement(element)
+            : isClickableElement(element),
+    )
     .map((element) => ({
       element,
       score: scoreSemanticTarget(target, accessibleDescriptions(element as HTMLElement)),
@@ -214,6 +246,19 @@ export function querySingleElement(
   }
   if (elements.length === 1) return elements[0]!;
   if (target && intent) {
+    const ordinal = requestedOrdinal(target);
+    const eligible = elements.filter((element) =>
+      intent === 'type'
+        ? isEditableElement(element)
+        : intent === 'select'
+          ? isSelectableElement(element)
+          : intent === 'check'
+            ? isCheckableElement(element)
+            : isClickableElement(element),
+    );
+    if (ordinal && eligible.length > 0) {
+      return ordinal === 'first' ? eligible[0]! : eligible[eligible.length - 1]!;
+    }
     const semantic = findSemanticElement(
       document,
       target,
@@ -267,8 +312,23 @@ function isElementDisabled(element: HTMLElement): boolean {
 }
 
 function dispatchInputEvents(element: HTMLElement): void {
-  element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function setNativeValue(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+): void {
+  const prototype = element instanceof HTMLInputElement
+    ? HTMLInputElement.prototype
+    : HTMLTextAreaElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+  if (!setter) {
+    element.value = value;
+    return;
+  }
+  setter.call(element, value);
 }
 
 function typeIntoElement(
@@ -300,7 +360,7 @@ function typeIntoElement(
         'Input type is not editable by this action',
       );
     }
-    element.value = clear ? text : `${element.value}${text}`;
+    setNativeValue(element, clear ? text : `${element.value}${text}`);
   } else if (element instanceof HTMLTextAreaElement) {
     if (element.readOnly) {
       throw new PageActionError(
@@ -308,7 +368,7 @@ function typeIntoElement(
         'Textarea is read-only',
       );
     }
-    element.value = clear ? text : `${element.value}${text}`;
+    setNativeValue(element, clear ? text : `${element.value}${text}`);
   } else if (element.isContentEditable) {
     element.textContent = clear ? text : `${element.textContent ?? ''}${text}`;
   } else {
@@ -469,6 +529,47 @@ export async function executePageAction(
         action.submit ?? false,
       );
       return;
+    case 'select': {
+      const element = await queryReadyElement(
+        document,
+        action.selector,
+        action.target,
+        'select',
+      );
+      if (!(element instanceof HTMLSelectElement) || element.disabled) {
+        throw new PageActionError('UNSUPPORTED_ELEMENT', 'Target is not an enabled select control');
+      }
+      const normalized = action.value.trim().toLocaleLowerCase();
+      const option = Array.from(element.options).find(
+        (candidate) =>
+          candidate.value.toLocaleLowerCase() === normalized ||
+          candidate.text.trim().toLocaleLowerCase() === normalized,
+      );
+      if (!option) {
+        throw new PageActionError('ELEMENT_NOT_FOUND', `No option matches “${action.value}”`);
+      }
+      element.value = option.value;
+      dispatchInputEvents(element);
+      return;
+    }
+    case 'check': {
+      const element = await queryReadyElement(
+        document,
+        action.selector,
+        action.target,
+        'check',
+      );
+      if (!isCheckableElement(element)) {
+        throw new PageActionError('UNSUPPORTED_ELEMENT', 'Target is not an enabled checkbox or radio button');
+      }
+      const checked = action.checked ?? true;
+      if (element.checked !== checked) element.click();
+      if (element.checked !== checked) {
+        element.checked = checked;
+        dispatchInputEvents(element);
+      }
+      return;
+    }
     case 'scroll': {
       const options: ScrollToOptions = {
         left: action.deltaX ?? 0,

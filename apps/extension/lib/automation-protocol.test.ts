@@ -60,4 +60,29 @@ describe('automation protocol security boundary', () => {
       }),
     ).toThrow();
   });
+
+  test('validates select and checkbox form actions', () => {
+    expect(validateAutomationRequest({
+      type: 'ila:automation:execute',
+      requestId: 'select-country',
+      scope: 'activeTab',
+      action: {
+        kind: 'select',
+        selector: '#country',
+        target: 'Country field',
+        value: 'India',
+      },
+      confirmation: { approved: true },
+    }).action).toEqual({
+      kind: 'select',
+      selector: '#country',
+      target: 'Country field',
+      value: 'India',
+    });
+    expect(confirmationPolicyForAction({
+      kind: 'check',
+      selector: '#terms',
+      checked: true,
+    }).required).toBe(true);
+  });
 });

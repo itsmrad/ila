@@ -68,6 +68,60 @@ async function waitForTabComplete(
   });
 }
 
+/**
+ * A content-script click resolves before a navigation or SPA transition may
+ * start. Observe a short activity window, then wait for a detected navigation
+ * to finish so the next agent turn always sees the resulting page.
+ */
+async function waitForPageActivity(
+  tabId: number,
+  previousUrl: string,
+  detectionMs = 750,
+  timeoutMs = 20_000,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let activityDetected = false;
+    let quietTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(detectionTimer);
+      clearTimeout(timeoutTimer);
+      if (quietTimer) clearTimeout(quietTimer);
+      browser.tabs.onUpdated.removeListener(onUpdated);
+      if (error) reject(error);
+      else resolve();
+    };
+    const scheduleComplete = () => {
+      if (quietTimer) clearTimeout(quietTimer);
+      quietTimer = setTimeout(() => finish(), 200);
+    };
+    const onUpdated = (
+      updatedId: number,
+      change: { status?: string; url?: string },
+    ) => {
+      if (updatedId !== tabId) return;
+      if (change.url || change.status === 'loading') activityDetected = true;
+      if (activityDetected && change.status === 'complete') scheduleComplete();
+    };
+    const detectionTimer = setTimeout(() => {
+      if (!activityDetected) finish();
+    }, detectionMs);
+    const timeoutTimer = setTimeout(
+      () => finish(new Error('Timed out waiting for the page action to settle')),
+      timeoutMs,
+    );
+    browser.tabs.onUpdated.addListener(onUpdated);
+    void browser.tabs.get(tabId).then((current) => {
+      if (current.url !== previousUrl || current.status === 'loading') {
+        activityDetected = true;
+      }
+      if (activityDetected && current.status === 'complete') scheduleComplete();
+    }).catch(() => finish(new Error('The active tab was closed')));
+  });
+}
+
 /** Executes only against the active HTTP(S) tab in the current window. */
 export async function executeAutomationRequest(
   request: AutomationExecuteRequest,
@@ -160,7 +214,11 @@ export async function executeAutomationRequest(
           'ok' in result &&
           typeof result.ok === 'boolean'
         ) {
-          return result as AutomationResponse;
+          const response = result as AutomationResponse;
+          if (response.ok && request.action.kind === 'click') {
+            await waitForPageActivity(tab.id, tab.url);
+          }
+          return response;
         }
         return errorResponse(
           request,

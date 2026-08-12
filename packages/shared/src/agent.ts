@@ -9,6 +9,7 @@ export const AGENT_LIMITS = {
   maxInputChars: 8_000,
   maxMemoryItems: 20,
   maxMemoryChars: 1_000,
+  maxExecutionRecords: 20,
 } as const;
 
 const selectorSchema = z.string().trim().min(1).max(AGENT_LIMITS.maxSelectorChars);
@@ -43,6 +44,18 @@ export const browserActionSchema = z.discriminatedUnion("type", [
     target: targetSchema.optional(),
     text: z.string().max(AGENT_LIMITS.maxInputChars),
     clear: z.boolean().default(true),
+  }),
+  z.object({
+    type: z.literal("select"),
+    selector: selectorSchema,
+    target: targetSchema.optional(),
+    value: z.string().trim().min(1).max(500),
+  }),
+  z.object({
+    type: z.literal("check"),
+    selector: selectorSchema,
+    target: targetSchema.optional(),
+    checked: z.boolean().default(true),
   }),
   z.object({
     type: z.literal("scroll"),
@@ -82,6 +95,7 @@ export const memoryContextItemSchema = z.object({
   url: webUrlSchema,
   summary: z.string().max(AGENT_LIMITS.maxMemoryChars).optional(),
 });
+export type MemoryContextItem = z.infer<typeof memoryContextItemSchema>;
 
 export const agentPlanRequestSchema = z.object({
   task: z.string().trim().min(1).max(AGENT_LIMITS.maxTaskChars),
@@ -101,11 +115,55 @@ export const agentPlanResponseSchema = z.object({
 
 export type AgentPlanResponse = z.infer<typeof agentPlanResponseSchema>;
 
+export const agentExecutionRecordSchema = z.object({
+  step: agentPlanStepSchema,
+  outcome: z.enum(["succeeded", "failed"]),
+  pageUrl: webUrlSchema.optional(),
+  error: z.string().trim().min(1).max(500).optional(),
+});
+
+export type AgentExecutionRecord = z.infer<typeof agentExecutionRecordSchema>;
+
+export const agentNextRequestSchema = agentPlanRequestSchema.extend({
+  execution: z
+    .array(agentExecutionRecordSchema)
+    .max(AGENT_LIMITS.maxExecutionRecords)
+    .default([]),
+});
+
+export type AgentNextRequest = z.infer<typeof agentNextRequestSchema>;
+
+export const agentDecisionSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("action"),
+    step: agentPlanStepSchema,
+  }),
+  z.object({
+    status: z.literal("complete"),
+    summary: z.string().trim().min(1).max(500),
+  }),
+  z.object({
+    status: z.literal("blocked"),
+    summary: z.string().trim().min(1).max(500),
+  }),
+]);
+
+export type AgentDecision = z.infer<typeof agentDecisionSchema>;
+
+export const agentNextResponseSchema = z.object({ decision: agentDecisionSchema });
+export type AgentNextResponse = z.infer<typeof agentNextResponseSchema>;
+
 /**
  * Actions that can remove browser state or submit data always need an explicit
  * confirmation unless the user has enabled the local skip-confirmation mode.
  * This policy is computed by the extension and is never delegated to the model.
  */
 export function actionRequiresConfirmation(action: BrowserAction): boolean {
-  return action.type === "close_tab" || action.type === "click" || action.type === "type";
+  return (
+    action.type === "close_tab" ||
+    action.type === "click" ||
+    action.type === "type" ||
+    action.type === "select" ||
+    action.type === "check"
+  );
 }

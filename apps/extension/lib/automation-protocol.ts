@@ -50,6 +50,20 @@ export type TypeAction = {
   submit?: boolean;
 };
 
+export type SelectAction = {
+  kind: 'select';
+  selector: string;
+  target?: string;
+  value: string;
+};
+
+export type CheckAction = {
+  kind: 'check';
+  selector: string;
+  target?: string;
+  checked?: boolean;
+};
+
 export type ScrollAction = {
   kind: 'scroll';
   selector?: string;
@@ -69,6 +83,8 @@ export type ExtractAction = {
 export type PageAutomationAction =
   | ClickAction
   | TypeAction
+  | SelectAction
+  | CheckAction
   | ScrollAction
   | ExtractAction;
 
@@ -306,6 +322,29 @@ export function validateAutomationAction(value: unknown): AutomationAction {
       if (submit !== undefined) action.submit = submit;
       return action;
     }
+    case 'select': {
+      const target = validateTarget(value.target);
+      const optionValue = requiredString(value.value, 'value', 500).trim();
+      if (!optionValue) {
+        throw new AutomationValidationError('value must not be blank');
+      }
+      return {
+        kind: 'select',
+        selector: validateSelector(value.selector),
+        ...(target ? { target } : {}),
+        value: optionValue,
+      };
+    }
+    case 'check': {
+      const target = validateTarget(value.target);
+      const checked = optionalBoolean(value.checked, 'checked');
+      return {
+        kind: 'check',
+        selector: validateSelector(value.selector),
+        ...(target ? { target } : {}),
+        ...(checked === undefined ? {} : { checked }),
+      };
+    }
     case 'scroll': {
       const deltaX =
         optionalFiniteNumber(
@@ -403,6 +442,8 @@ export function isPageAutomationAction(
   return (
     action.kind === 'click' ||
     action.kind === 'type' ||
+    action.kind === 'select' ||
+    action.kind === 'check' ||
     action.kind === 'scroll' ||
     action.kind === 'extract'
   );
@@ -420,6 +461,12 @@ export function confirmationPolicyForAction(
       return {
         required: true,
         reason: 'Typing changes page state and may disclose provided text.',
+      };
+    case 'select':
+    case 'check':
+      return {
+        required: true,
+        reason: 'Changing a form control modifies page state.',
       };
     case 'click':
       return {

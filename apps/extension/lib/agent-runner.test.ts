@@ -30,6 +30,17 @@ describe('agent action mapping', () => {
       text: 'mrbeast',
       clear: true,
     });
+    expect(toAutomationAction({
+      type: 'select',
+      selector: '#country',
+      target: 'Country field',
+      value: 'India',
+    })).toEqual({
+      kind: 'select',
+      selector: '#country',
+      target: 'Country field',
+      value: 'India',
+    });
   });
 
   test('keeps wait local to the runner', () => {

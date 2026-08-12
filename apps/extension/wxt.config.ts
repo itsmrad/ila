@@ -59,12 +59,12 @@ export default defineConfig({
     description: 'Your intelligent browser productivity assistant.',
     // `tabs` is needed to read the active tab's title/URL for page context.
     permissions: ['sidePanel', 'identity', 'storage', 'tabs', 'activeTab'],
-    // Browser-agent content scripts are intentionally limited to ordinary web
-    // pages; chrome://, file://, and extension origins remain inaccessible.
+    // captureVisibleTab requires Chrome's special <all_urls> host grant when
+    // the call originates from a side-panel control rather than the toolbar
+    // action. Content scripts remain restricted to HTTP(S) by their matches.
     host_permissions: [
       ...backendHostPermissions(env),
-      'http://*/*',
-      'https://*/*',
+      '<all_urls>',
     ],
     action: { default_title: 'Open ILA' },
   }),

@@ -109,17 +109,17 @@ export function SettingsPanel({
       role="dialog"
       aria-modal="true"
       aria-labelledby="agent-settings-title"
-      className="absolute inset-0 z-30 flex flex-col bg-white/95 backdrop-blur-sm"
+      className="absolute inset-0 z-30 flex flex-col bg-[var(--page)]"
     >
-      <header className="flex h-[76px] shrink-0 items-center justify-between px-4 pt-[22px] pb-[14px] md:px-[30px]">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-dashed border-[var(--line)] px-4">
         <div>
           <h2
             id="agent-settings-title"
-            className="text-[15px] font-semibold text-[#181818]"
+            className="text-[13px] font-semibold text-[var(--ink)]"
           >
             Agent settings
           </h2>
-          <p className="mt-0.5 text-[11px] text-[#929292]">
+          <p className="mt-0.5 text-[10.5px] text-[var(--ink-3)]">
             Stored only in this browser
           </p>
         </div>
@@ -128,17 +128,17 @@ export function SettingsPanel({
           type="button"
           onClick={onClose}
           aria-label="Close settings"
-          className="grid h-8 w-8 cursor-pointer place-items-center rounded-[10px] text-[#707070] transition-colors hover:bg-[#f0f0f0] hover:text-[#303030] focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+          className="grid size-8 place-items-center rounded-[8px] text-[var(--ink-3)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
         >
           <X size={18} aria-hidden="true" />
         </button>
       </header>
 
-      <div className="flex-1 overflow-auto px-4 pb-6 md:px-[30px]">
+      <div className="flex-1 overflow-auto px-4 pb-6 pt-4">
         {!settings ? (
           <div
             role="status"
-            className="flex items-center justify-center gap-2 py-12 text-[13px] text-[#929292]"
+            className="flex items-center justify-center gap-2 py-12 text-[13px] text-[var(--ink-3)]"
           >
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
             Loading settings…
@@ -153,13 +153,13 @@ export function SettingsPanel({
                 <label
                   key={option.key}
                   htmlFor={id}
-                  className="flex cursor-pointer items-center gap-3 rounded-[14px] border border-[#ededed] bg-white px-3 py-3 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-[#a9baf6]"
+                  className="flex cursor-pointer items-center gap-3 rounded-[13px] bg-[var(--surface)] px-3 py-3 shadow-[var(--shadow-hairline)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-[var(--focus)]"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] font-medium text-[#282828]">
+                    <span className="block text-[12.5px] font-medium text-[var(--ink)]">
                       {option.label}
                     </span>
-                    <span className="mt-0.5 block text-[11px] leading-4 text-[#858585]">
+                    <span className="mt-0.5 block text-[11px] leading-4 text-[var(--ink-3)]">
                       {option.description}
                     </span>
                   </span>
@@ -168,7 +168,7 @@ export function SettingsPanel({
                     type="checkbox"
                     checked={settings[option.key]}
                     onChange={() => void toggle(option.key)}
-                    className="h-4 w-4 shrink-0 cursor-pointer accent-[#6d5efc] focus-visible:outline-none"
+                    className="size-4 shrink-0 cursor-pointer accent-[var(--accent)] focus-visible:outline-none"
                   />
                 </label>
               );
@@ -177,16 +177,16 @@ export function SettingsPanel({
           <button
             type="button"
             onClick={onOpenMemory}
-            className="mt-3 flex w-full items-center gap-3 rounded-[14px] border border-[#dedff0] bg-[#f8f8ff] px-3 py-3 text-left transition-colors hover:bg-[#f2f2ff] focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+            className="mt-3 flex w-full items-center gap-3 rounded-[13px] bg-[var(--accent-tint)] px-3 py-3 text-left transition-colors hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
           >
-            <span className="grid h-9 w-9 place-items-center rounded-[11px] bg-[#e8e9ff] text-[#6456d6]">
+            <span className="grid size-9 place-items-center rounded-[10px] bg-[var(--accent-tint)] text-[var(--accent)]">
               <Brain size={17} aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-[#282832]">Process browsing memory</span>
-              <span className="mt-0.5 block text-[11px] text-[#85858f]">Review and clear locally retained page context.</span>
+              <span className="block text-[12.5px] font-medium text-[var(--ink)]">Process browsing memory</span>
+              <span className="mt-0.5 block text-[11px] text-[var(--ink-3)]">Review and clear locally retained page context.</span>
             </span>
-            <ChevronRight size={16} className="text-[#9998a3]" aria-hidden="true" />
+            <ChevronRight size={16} className="text-[var(--ink-3)]" aria-hidden="true" />
           </button>
           </>
         )}
@@ -196,7 +196,7 @@ export function SettingsPanel({
             type="button"
             onClick={() => void reset()}
             disabled={!settings || saving !== null}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[12px] font-medium text-[#666] transition-colors hover:bg-[#f2f2f2] focus-visible:outline-2 focus-visible:outline-[#a9baf6] disabled:cursor-default disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-[9px] px-2 py-1.5 text-[12px] font-medium text-[var(--ink-2)] transition-colors hover:bg-[var(--hover-2)] focus-visible:outline-2 focus-visible:outline-[var(--focus)] disabled:cursor-default disabled:opacity-50"
           >
             {saving === 'reset' ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -205,7 +205,7 @@ export function SettingsPanel({
             )}
             Restore defaults
           </button>
-          <span aria-live="polite" className="text-[11px] text-[#858585]">
+          <span aria-live="polite" className="text-[11px] text-[var(--ink-3)]">
             {message}
           </span>
         </div>

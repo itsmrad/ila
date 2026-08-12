@@ -3,6 +3,7 @@ import {
   actionRequiresConfirmation,
   agentPlanRequestSchema,
   agentPlanSchema,
+  agentDecisionSchema,
   browserActionSchema,
 } from "./agent";
 
@@ -56,6 +57,25 @@ describe("browser action contract", () => {
         target: "x".repeat(241),
       }).success,
     ).toBe(false);
+  });
+
+  test("supports safe form controls and one-step agent decisions", () => {
+    expect(browserActionSchema.safeParse({
+      type: "select",
+      selector: "#country",
+      target: "Country field",
+      value: "India",
+    }).success).toBe(true);
+    expect(browserActionSchema.safeParse({
+      type: "check",
+      selector: "#terms",
+      target: "Terms checkbox",
+      checked: true,
+    }).success).toBe(true);
+    expect(agentDecisionSchema.safeParse({
+      status: "complete",
+      summary: "The requested page is visible.",
+    }).success).toBe(true);
   });
 
   test("requires confirmation for browser-changing page actions", () => {

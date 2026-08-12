@@ -8,11 +8,19 @@ import {
   useState,
 } from 'react';
 import { IlaMark } from '@ila/ui';
-import type { ChatMessage, ChatModel, PageContext } from '@ila/shared';
+import type {
+  AgentExecutionRecord,
+  AgentPlanStep,
+  ChatMessage,
+  ChatModel,
+  MemoryContextItem,
+  PageContext,
+} from '@ila/shared';
 import { UtilityBar } from '../../components/layout/UtilityBar';
 import { Composer } from '../../components/chat/Composer';
 import { MessageBubble } from '../../components/chat/MessageBubble';
 import { ErrorToast } from '../../components/chat/ErrorToast';
+import { RecommendationCard } from '../../components/ai';
 import { ChatHistoryPanel } from '../../components/chat/ChatHistoryPanel';
 import type { ComposerAttachment } from '../../components/chat/Composer';
 import { AgentRunPanel, type AgentRunView } from '../../components/agent/AgentRunPanel';
@@ -34,8 +42,12 @@ import {
   saveChatSession,
 } from '../../lib/chat-storage';
 import type { SessionUser } from '../../lib/auth';
-import { planAgentTask } from '../../lib/agent-api';
-import { executeAgentAction, observeActivePage } from '../../lib/agent-runner';
+import { nextAgentAction, planAgentTask } from '../../lib/agent-api';
+import {
+  executeAgentAction,
+  observeActivePage,
+  observeActivePageState,
+} from '../../lib/agent-runner';
 import {
   DEFAULT_AGENT_SETTINGS,
   loadAgentSettings,
@@ -61,7 +73,7 @@ export default function App() {
 
   if (status === 'loading') {
     return (
-      <main className="flex h-[100dvh] min-w-[300px] items-center justify-center bg-gradient-to-b from-[#fbfbfb] to-[#fdfdfd] text-[#bbb]">
+      <main className="flex h-[100dvh] min-w-[300px] items-center justify-center bg-[var(--page)] text-[var(--ink-3)]">
         <IlaMark large />
       </main>
     );
@@ -138,9 +150,23 @@ function ChatApp({
   });
   const [agentRun, setAgentRun] = useState<AgentRunView | null>(null);
   const agentCancelled = useRef(false);
+  const agentAbort = useRef<AbortController | null>(null);
+  const agentMemory = useRef<MemoryContextItem[] | undefined>(undefined);
+  const agentSettingsRef = useRef(agentSettings);
+  useEffect(() => {
+    agentSettingsRef.current = agentSettings;
+  }, [agentSettings]);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [darkMode, setDarkMode] = useState(() => {
+    return document.documentElement.dataset.theme === 'dark';
+  });
   const scrollArea = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
+    localStorage.setItem('ila-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
 
   useEffect(() => {
     void loadAgentSettings().then(setAgentSettings);
@@ -167,7 +193,7 @@ function ChatApp({
   const messagesRef = useRef<UIMessage[]>(messages);
   useEffect(() => {
     messagesRef.current = messages;
-  }, [messages]);
+  }, [messages, agentRun]);
 
   /* ------------------------------ model list ----------------------------- */
 
@@ -257,6 +283,124 @@ function ChatApp({
     }
   }, [messages]);
 
+  const runPlan = useCallback(async (run: AgentRunView, approved: boolean) => {
+    if (!run.plan) return;
+    agentAbort.current?.abort();
+    const controller = new AbortController();
+    agentAbort.current = controller;
+    agentCancelled.current = false;
+    const execution: AgentExecutionRecord[] = [];
+    const rows: NonNullable<AgentRunView['execution']> = [];
+    const plannedQueue = [...run.plan.steps];
+    let consecutiveFailures = 0;
+
+    setAgentRun({
+      ...run,
+      status: 'running',
+      thinking: true,
+      completedSteps: 0,
+      execution: [],
+    });
+
+    try {
+      for (let turn = 0; turn < 20; turn += 1) {
+        if (agentCancelled.current) return;
+        const observation = await observeActivePageState();
+        let step: AgentPlanStep | undefined = plannedQueue.shift();
+        if (!step) {
+          const decision = await nextAgentAction(
+            {
+              task: run.task,
+              ...(modelRef.current ? { model: modelRef.current } : {}),
+              pageContext: observation.pageContext,
+              ...(observation.pageSnapshot
+                ? { pageSnapshot: observation.pageSnapshot }
+                : {}),
+              ...(agentMemory.current?.length ? { memory: agentMemory.current } : {}),
+              reasoning: agentSettingsRef.current.reasoning,
+              execution,
+            },
+            controller.signal,
+          );
+          if (agentCancelled.current) return;
+          if (decision.status === 'complete') {
+            setAgentRun({
+              ...run,
+              status: 'complete',
+              thinking: false,
+              completedSteps: rows.filter((row) => row.status === 'succeeded').length,
+              execution: [...rows],
+              summary: decision.summary,
+            });
+            return;
+          }
+          if (decision.status === 'blocked') throw new Error(decision.summary);
+          step = decision.step;
+        }
+
+        rows.push({ step, status: 'running' });
+        setAgentRun({
+          ...run,
+          status: 'running',
+          thinking: false,
+          activeStep: rows.length - 1,
+          completedSteps: rows.filter((row) => row.status === 'succeeded').length,
+          execution: [...rows],
+        });
+
+        const result = await executeAgentAction(step.action, approved);
+        if (result && !result.ok) {
+          plannedQueue.length = 0;
+          consecutiveFailures += 1;
+          rows[rows.length - 1] = {
+            step,
+            status: 'failed',
+            error: result.error.message,
+          };
+          execution.push({
+            step,
+            outcome: 'failed',
+            error: result.error.message,
+          });
+          if (consecutiveFailures >= 3) {
+            throw new Error(result.error.message);
+          }
+        } else {
+          consecutiveFailures = 0;
+          rows[rows.length - 1] = { step, status: 'succeeded' };
+          execution.push({
+            step,
+            outcome: 'succeeded',
+          });
+        }
+
+        setAgentRun({
+          ...run,
+          status: 'running',
+          thinking: true,
+          activeStep: rows.length,
+          completedSteps: rows.filter((row) => row.status === 'succeeded').length,
+          execution: [...rows],
+        });
+      }
+      throw new Error('ILA reached the 20-action safety limit before verifying completion.');
+    } catch (cause) {
+      if (agentCancelled.current || (cause instanceof Error && cause.name === 'AbortError')) {
+        return;
+      }
+      setAgentRun({
+        ...run,
+        status: 'failed',
+        thinking: false,
+        completedSteps: rows.filter((row) => row.status === 'succeeded').length,
+        execution: [...rows],
+        error: cause instanceof Error ? cause.message : 'The browser action failed.',
+      });
+    } finally {
+      if (agentAbort.current === controller) agentAbort.current = null;
+    }
+  }, []);
+
   const submit = useCallback(
     async (text: string, attachments: ComposerAttachment[]) => {
       setNotice(null);
@@ -279,25 +423,32 @@ function ChatApp({
         return;
       }
 
+      agentAbort.current?.abort();
+      const planningController = new AbortController();
+      agentAbort.current = planningController;
       agentCancelled.current = false;
       setAgentRun({ status: 'planning', task: text });
       try {
         const pageSnapshot = await observeActivePage().catch(() => undefined);
-        const memory = agentSettings.memory
+        const memory: MemoryContextItem[] | undefined = agentSettings.memory
           ? (await listBrowsingMemory()).slice(0, 20).map((entry) => ({
               title: entry.title,
               url: entry.url,
               ...(entry.context ? { summary: entry.context.slice(0, 1_000) } : {}),
             }))
           : undefined;
-        const plan = await planAgentTask({
-          task: text,
-          ...(model ? { model } : {}),
-          ...(shareContext && pageContext ? { pageContext } : {}),
-          ...(pageSnapshot ? { pageSnapshot } : {}),
-          ...(memory?.length ? { memory } : {}),
-          reasoning: agentSettings.reasoning,
-        });
+        agentMemory.current = memory;
+        const plan = await planAgentTask(
+          {
+            task: text,
+            ...(model ? { model } : {}),
+            ...(shareContext && pageContext ? { pageContext } : {}),
+            ...(pageSnapshot ? { pageSnapshot } : {}),
+            ...(memory?.length ? { memory } : {}),
+            reasoning: agentSettings.reasoning,
+          },
+          planningController.signal,
+        );
         if (agentCancelled.current) return;
         const next: AgentRunView = {
           status: agentSettings.skipConfirmation ? 'running' : 'awaiting-confirmation',
@@ -310,44 +461,26 @@ function ChatApp({
           await runPlan(next, true);
         }
       } catch (cause) {
+        if (
+          agentCancelled.current ||
+          (cause instanceof Error && cause.name === 'AbortError')
+        ) return;
         setAgentRun({
           status: 'failed',
           task: text,
           error: cause instanceof Error ? cause.message : 'Could not plan this browser task.',
         });
+      } finally {
+        if (agentAbort.current === planningController) agentAbort.current = null;
       }
     },
-    [agentSettings, clearError, model, pageContext, sendMessage, shareContext],
+    [agentSettings, clearError, model, pageContext, runPlan, sendMessage, shareContext],
   );
-
-  const runPlan = useCallback(async (run: AgentRunView, approved: boolean) => {
-    if (!run.plan) return;
-    agentCancelled.current = false;
-    setAgentRun({ ...run, status: 'running', activeStep: 0, completedSteps: 0 });
-    try {
-      for (let index = 0; index < run.plan.steps.length; index += 1) {
-        if (agentCancelled.current) return;
-        setAgentRun({ ...run, status: 'running', activeStep: index, completedSteps: index });
-        const result = await executeAgentAction(run.plan.steps[index]!.action, approved);
-        if (result && !result.ok) throw new Error(result.error.message);
-        setAgentRun({ ...run, status: 'running', activeStep: index, completedSteps: index + 1 });
-      }
-      setAgentRun({
-        ...run,
-        status: 'complete',
-        completedSteps: run.plan.steps.length,
-      });
-    } catch (cause) {
-      setAgentRun({
-        ...run,
-        status: 'failed',
-        error: cause instanceof Error ? cause.message : 'The browser action failed.',
-      });
-    }
-  }, []);
 
   const cancelAgent = useCallback(() => {
     agentCancelled.current = true;
+    agentAbort.current?.abort();
+    agentAbort.current = null;
     setAgentRun(null);
   }, []);
 
@@ -359,9 +492,13 @@ function ChatApp({
   );
 
   const startNewChat = useCallback(() => {
+    agentCancelled.current = true;
+    agentAbort.current?.abort();
+    agentAbort.current = null;
     stop();
     clearError();
     setNotice(null);
+    setAgentRun(null);
     setChatId(undefined);
     setMessages([]);
     setInput('');
@@ -382,11 +519,15 @@ function ChatApp({
     if (!confirmed) return;
 
     stop();
+    agentCancelled.current = true;
+    agentAbort.current?.abort();
+    agentAbort.current = null;
     clearError();
     setNotice(null);
     setMessages([]);
     setInput('');
     setChatId(undefined);
+    setAgentRun(null);
     await clearChatSession(user.id);
 
     if (target) {
@@ -457,7 +598,7 @@ function ChatApp({
   const lastMessage = messages.at(-1);
 
   return (
-    <main className="relative flex flex-col h-[100dvh] min-w-[300px] overflow-hidden bg-gradient-to-b from-[#fbfbfb] to-[#fdfdfd] text-[#181818]">
+    <main className="relative flex h-[100dvh] min-w-[300px] flex-col overflow-hidden bg-[var(--page)] text-[var(--ink)]">
       <UtilityBar
         onNewChat={startNewChat}
         onClearConversation={() => void clearConversation()}
@@ -469,14 +610,16 @@ function ChatApp({
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenMemory={() => setMemoryOpen(true)}
         memoryEnabled={agentSettings.memory}
+        darkMode={darkMode}
+        onToggleTheme={() => setDarkMode((value) => !value)}
       />
 
       <div
         ref={scrollArea}
-        className="flex-1 overflow-auto px-4 md:px-[42px] pt-[26px] pb-[220px] scrollbar-thin"
+        className="flex-1 overflow-auto px-4 pb-6 pt-5 scrollbar-thin md:px-6"
       >
-        {messages.length > 0 ? (
-          <div className="flex flex-col gap-8 pb-4">
+        {messages.length > 0 || agentRun ? (
+          <div className="mx-auto flex w-full max-w-[620px] flex-col gap-6 pb-4">
             {messages.map((message) => (
               <MessageBubble
                 key={message.id}
@@ -494,23 +637,33 @@ function ChatApp({
                 isStreaming
               />
             )}
+            {agentRun && (
+              <AgentRunPanel
+                run={agentRun}
+                onCancel={cancelAgent}
+                onConfirm={() => void runPlan(agentRun, true)}
+              />
+            )}
           </div>
         ) : (
-          <div className="min-h-full flex flex-col items-center justify-center gap-5 text-[#bbb] text-[13px]">
-            <IlaMark large />
-            <span>Ask ILA anything about this page</span>
+          <div className="mx-auto flex min-h-full w-full max-w-[480px] flex-col justify-center py-8">
+            <div className="flex items-center gap-3">
+              <IlaMark />
+              <div>
+                <h1 className="text-[16px] font-semibold tracking-[-0.02em] text-[var(--ink)]">What should I do?</h1>
+                <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">Ask a question or hand ILA a browser task.</p>
+              </div>
+            </div>
+            <div className="mt-6 grid gap-2">
+              <RecommendationCard title="Work with this page" description="Summarize, compare, or extract what matters." onSelect={() => setInput('Summarize this page and highlight the key actions.')} />
+              <RecommendationCard title="Use the browser" description="Navigate, search, and complete multi-step forms." onSelect={() => setInput('Use the browser to ')} />
+              <RecommendationCard title="Remember this context" description="Save the useful parts of this page locally." onSelect={() => setInput('Remember the important context from this page.')} />
+            </div>
           </div>
         )}
       </div>
 
-      <div className="absolute z-10 left-3 right-3 md:left-[28px] md:right-[28px] bottom-3 md:bottom-[25px] flex flex-col gap-2">
-        {agentRun && (
-          <AgentRunPanel
-            run={agentRun}
-            onCancel={cancelAgent}
-            onConfirm={() => void runPlan(agentRun, true)}
-          />
-        )}
+      <div className="z-10 flex shrink-0 flex-col gap-2 border-t border-dashed border-[var(--line)] bg-[var(--page)] px-3 pb-3 pt-2.5 md:px-4">
         {notice && (
           <ErrorToast message={notice} onDismiss={() => setNotice(null)} />
         )}

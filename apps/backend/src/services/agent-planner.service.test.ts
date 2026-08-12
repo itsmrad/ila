@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import {
   AgentPlanningError,
   AgentProviderError,
+  parseAgentDecisionText,
   parseAgentPlanText,
+  usesUnrequestedParameterizedNavigation,
 } from './agent-planner.service';
 
 const validPlan = {
@@ -54,5 +56,51 @@ describe('agent plan text parsing', () => {
     expect(new AgentPlanningError().code).toBe('AGENT_PLAN_FAILED');
     expect(new AgentProviderError().statusCode).toBe(502);
     expect(new AgentProviderError(true).statusCode).toBe(504);
+  });
+
+  test('accepts one grounded decision and rejects invalid completion shapes', () => {
+    expect(parseAgentDecisionText(JSON.stringify({
+      status: 'action',
+      step: {
+        id: 'type-search',
+        title: 'Type into search',
+        action: {
+          type: 'type',
+          selector: '#search',
+          target: 'Search field',
+          text: 'MrBeast',
+          clear: true,
+        },
+      },
+    }))).toEqual({
+      status: 'action',
+      step: {
+        id: 'type-search',
+        title: 'Type into search',
+        action: {
+          type: 'type',
+          selector: '#search',
+          target: 'Search field',
+          text: 'MrBeast',
+          clear: true,
+        },
+      },
+    });
+    expect(parseAgentDecisionText('{"status":"complete"}')).toBeNull();
+  });
+
+  test('blocks model-invented deep and parameterized navigation', () => {
+    expect(usesUnrequestedParameterizedNavigation('Search YouTube for MrBeast', {
+      type: 'navigate',
+      url: 'https://www.youtube.com/results?search_query=mrbeast',
+    })).toBe(true);
+    expect(usesUnrequestedParameterizedNavigation('Open YouTube', {
+      type: 'navigate',
+      url: 'https://www.youtube.com/',
+    })).toBe(false);
+    expect(usesUnrequestedParameterizedNavigation('Open github.com/openai/codex', {
+      type: 'navigate',
+      url: 'https://github.com/openai/codex',
+    })).toBe(false);
   });
 });

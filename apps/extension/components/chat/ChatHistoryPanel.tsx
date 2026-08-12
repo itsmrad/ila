@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, MessageSquare, Trash2, X } from 'lucide-react';
 import { CHAT_LIMITS, type ChatSummary } from '@ila/shared';
 import { ChatApiError, deleteChat, fetchChats } from '../../lib/chat-api';
+import { SearchField } from '../ai';
 
 /** Compact relative time ("3m", "2h", "5d") with an absolute-time tooltip. */
 function relativeTime(iso: string): string {
@@ -49,6 +50,7 @@ export function ChatHistoryPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const closeButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async (cursor?: string) => {
@@ -116,9 +118,9 @@ export function ChatHistoryPanel({
   if (!open) return null;
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col bg-white/95 backdrop-blur-sm">
-      <header className="flex h-[76px] shrink-0 items-center justify-between px-4 pt-[22px] pb-[14px] md:px-[30px]">
-        <h2 className="text-[15px] font-semibold text-[#181818]">
+    <div className="absolute inset-0 z-30 flex flex-col bg-[var(--page)]">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-dashed border-[var(--line)] px-4">
+        <h2 className="text-[13px] font-semibold text-[var(--ink)]">
           Your conversations
         </h2>
         <button
@@ -126,38 +128,41 @@ export function ChatHistoryPanel({
           type="button"
           onClick={onClose}
           aria-label="Close history"
-          className="grid h-8 w-8 place-items-center rounded-[10px] text-[#707070] transition-colors hover:bg-[#f0f0f0] hover:text-[#303030] focus-visible:outline-2 focus-visible:outline-[#a9baf6] cursor-pointer"
+          className="grid size-8 place-items-center rounded-[8px] text-[var(--ink-3)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
         >
           <X size={18} aria-hidden="true" />
         </button>
       </header>
 
-      <div className="flex-1 overflow-auto px-3 pb-6 md:px-[22px]">
+      <div className="flex-1 overflow-auto px-3.5 pb-6 pt-3">
+        <div className="mb-3">
+          <SearchField value={query} onChange={setQuery} placeholder="Search conversations" />
+        </div>
         {error && (
           <p
             role="alert"
-            className="mb-3 rounded-[12px] border border-[#f5c2c7] bg-[#fdf2f3] px-3 py-2 text-[12px] text-[#8a1c24]"
+            className="mb-3 rounded-[12px] bg-[var(--danger-tint)] px-3 py-2 text-[12px] text-[var(--danger)]"
           >
             {error}
           </p>
         )}
 
         {loading && chats.length === 0 && (
-          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[#a8a8a8]">
+          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[var(--ink-3)]">
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
             Loading…
           </div>
         )}
 
         {!loading && chats.length === 0 && !error && (
-          <div className="flex flex-col items-center gap-2 py-12 text-center text-[13px] text-[#a8a8a8]">
+          <div className="flex flex-col items-center gap-2 py-12 text-center text-[13px] text-[var(--ink-3)]">
             <MessageSquare size={20} aria-hidden="true" />
             <p>No saved conversations yet.</p>
           </div>
         )}
 
         <ul className="flex flex-col gap-1">
-          {chats.map((chat) => {
+          {chats.filter((chat) => chat.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((chat) => {
             const isActive = chat.id === activeChatId;
             return (
               <li key={chat.id} className="group flex items-center gap-1">
@@ -165,15 +170,15 @@ export function ChatHistoryPanel({
                   type="button"
                   onClick={() => onSelect(chat.id)}
                   aria-current={isActive ? 'true' : undefined}
-                  className={`flex-1 min-w-0 rounded-[14px] px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-[#a9baf6] cursor-pointer ${
-                    isActive ? 'bg-[#eef1fd]' : 'hover:bg-[#f5f5f5]'
+                  className={`flex-1 min-w-0 rounded-[12px] px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus)] cursor-pointer ${
+                    isActive ? 'bg-[var(--accent-tint)]' : 'hover:bg-[var(--hover-2)]'
                   }`}
                 >
-                  <span className="block truncate text-[13px] font-medium text-[#282828]">
+                  <span className="block truncate text-[12.5px] font-medium text-[var(--ink)]">
                     {chat.title}
                   </span>
                   <span
-                    className="block text-[11px] text-[#a8a8a8]"
+                    className="block text-[10.5px] text-[var(--ink-3)]"
                     title={new Date(chat.updatedAt).toLocaleString()}
                   >
                     {relativeTime(chat.updatedAt)}
@@ -185,7 +190,7 @@ export function ChatHistoryPanel({
                   onClick={() => void remove(chat.id)}
                   disabled={pendingDelete === chat.id}
                   aria-label={`Delete conversation: ${chat.title}`}
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-[#b0b0b0] opacity-0 transition-all hover:bg-[#fdf2f3] hover:text-[#e5484d] focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[#a9baf6] group-hover:opacity-100 disabled:opacity-40 cursor-pointer"
+                  className="grid size-8 shrink-0 place-items-center rounded-[9px] text-[var(--ink-3)] opacity-0 transition-all hover:bg-[var(--danger-tint)] hover:text-[var(--danger)] focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--focus)] group-hover:opacity-100 disabled:opacity-40"
                 >
                   {pendingDelete === chat.id ? (
                     <Loader2 size={15} className="animate-spin" aria-hidden="true" />
@@ -203,7 +208,7 @@ export function ChatHistoryPanel({
             type="button"
             onClick={() => void load(nextCursor)}
             disabled={loading}
-            className="mt-3 w-full rounded-[14px] border border-[#e8e8e8] px-3 py-2 text-[12px] font-medium text-[#606060] transition-colors hover:bg-[#f5f5f5] disabled:opacity-50 cursor-pointer"
+            className="mt-3 w-full rounded-[12px] bg-[var(--field)] px-3 py-2 text-[12px] font-medium text-[var(--ink-2)] transition-colors hover:bg-[var(--hover)] disabled:opacity-50"
           >
             {loading ? 'Loading…' : 'Load older conversations'}
           </button>

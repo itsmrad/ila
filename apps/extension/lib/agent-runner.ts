@@ -1,4 +1,4 @@
-import type { BrowserAction } from '@ila/shared';
+import type { BrowserAction, PageContext } from '@ila/shared';
 import { browser } from 'wxt/browser';
 import {
   AUTOMATION_EXECUTE_MESSAGE,
@@ -33,6 +33,20 @@ export function toAutomationAction(action: BrowserAction): AutomationAction | nu
         ...(action.target ? { target: action.target } : {}),
         text: action.text,
         clear: action.clear,
+      };
+    case 'select':
+      return {
+        kind: 'select',
+        selector: action.selector,
+        ...(action.target ? { target: action.target } : {}),
+        value: action.value,
+      };
+    case 'check':
+      return {
+        kind: 'check',
+        selector: action.selector,
+        ...(action.target ? { target: action.target } : {}),
+        checked: action.checked,
       };
     case 'scroll':
       return {
@@ -87,4 +101,29 @@ export async function observeActivePage(): Promise<string | undefined> {
   })) as AutomationResponse;
 
   return response.ok ? response.data?.values.join('\n').slice(0, 12_000) : undefined;
+}
+
+export interface ActivePageObservation {
+  pageContext: PageContext;
+  pageSnapshot?: string;
+}
+
+/** Capture URL/title and accessible outline from the same active-tab turn. */
+export async function observeActivePageState(): Promise<ActivePageObservation> {
+  const [before] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!before?.url || !/^https?:\/\//i.test(before.url)) {
+    throw new Error('Open a regular website before running the browser agent.');
+  }
+  const pageSnapshot = await observeActivePage();
+  const [after] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (after?.id !== before.id || after.url !== before.url) {
+    throw new Error('The active tab changed while ILA was observing it.');
+  }
+  return {
+    pageContext: {
+      url: before.url,
+      ...(before.title ? { title: before.title } : {}),
+    },
+    ...(pageSnapshot ? { pageSnapshot } : {}),
+  };
 }
