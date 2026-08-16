@@ -50,7 +50,7 @@ export function ModeTabs({
       role="tablist"
       aria-label="Panel mode"
       onKeyDown={onKeyDown}
-      className="mx-4 mb-2 flex shrink-0 gap-1 rounded-[14px] border border-[#e8e8e8] bg-[#f5f5f5] p-1 md:mx-[30px]"
+      className="mx-4 mb-2 flex shrink-0 gap-1 rounded-[13px] bg-[var(--field)] p-1 shadow-[var(--shadow-hairline)] md:mx-6"
     >
       {TABS.map((tab) => {
         const Icon = tab.icon;
@@ -65,10 +65,10 @@ export function ModeTabs({
             aria-controls={tabPanelId(tab.mode)}
             tabIndex={selected ? 0 : -1}
             onClick={() => onModeChange(tab.mode)}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-[10px] px-3 py-1.5 text-[12px] font-medium transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6] ${
+            className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus)] ${
               selected
-                ? 'bg-white text-[#282828] shadow-sm'
-                : 'text-[#8a8a8a] hover:text-[#505050]'
+                ? 'bg-[var(--surface)] text-[var(--ink)] shadow-[var(--shadow-hairline)]'
+                : 'text-[var(--ink-3)] hover:text-[var(--ink-2)]'
             }`}
           >
             <Icon size={14} aria-hidden="true" />

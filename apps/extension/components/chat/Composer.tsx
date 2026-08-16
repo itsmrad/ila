@@ -1,15 +1,43 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react';
 import {
   ArrowUp,
   Check,
+  ChevronDown,
   Crop,
+  FileUp,
+  Image as ImageIcon,
   Mic2,
   Paperclip,
-  SlidersHorizontal,
   Square,
+  X,
 } from 'lucide-react';
 import { IconButton } from '@ila/ui';
 import { CHAT_LIMITS, type ChatModel } from '@ila/shared';
+import {
+  ATTACHMENT_ACCEPT,
+  createAttachmentId,
+  dataUrlByteLength,
+  MAX_ATTACHMENT_COUNT,
+  MAX_ATTACHMENT_BYTES,
+  readFileAsDataUrl,
+  summarizeAttachmentRejections,
+  validateAttachmentCandidates,
+  type ComposerAttachment,
+} from './attachments';
+
+export type { ComposerAttachment } from './attachments';
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 /** Model picker backed by the server's allowlist. */
 function ModelMenu({
@@ -58,8 +86,6 @@ function ModelMenu({
     (selected ?? group.querySelector<HTMLButtonElement>('button'))?.focus();
   }, [open]);
 
-  if (models.length === 0) return null;
-
   const select = (id: string) => {
     onModelChange(id);
     setOpen(false);
@@ -68,23 +94,22 @@ function ModelMenu({
 
   return (
     <div className="relative" ref={menuRef}>
-      <IconButton
+      <button
         ref={trigger}
-        label="Model"
+        type="button"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={open ? 'bg-[#f0f0f0] text-[#303030]' : ''}
+        className={`inline-flex h-8 items-center gap-1.5 rounded-[9px] px-2.5 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus)] ${open ? 'bg-[var(--field)] text-[var(--ink)]' : 'text-[var(--ink-2)] hover:bg-[var(--hover-2)]'}`}
       >
-        <SlidersHorizontal size={20} />
-      </IconButton>
+        Model
+        <ChevronDown size={12} className={`text-[var(--ink-3)] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
 
       {open && (
-        <div className="absolute bottom-[calc(100%+12px)] left-0 w-[240px] p-2 rounded-[24px] bg-white border border-[#e8e8e8] shadow-[0_16px_40px_#00000018,0_4px_12px_#00000008] z-20 flex flex-col gap-1">
-          <div
-            id="model-group-label"
-            className="px-3 pt-2 pb-1 text-[11px] font-bold text-gray-400 uppercase tracking-wider"
-          >
-            Model
+        <div className="absolute bottom-[calc(100%+10px)] left-0 z-20 flex w-[250px] flex-col gap-1 rounded-[15px] bg-[var(--surface)] p-2 shadow-[var(--shadow-overlay)]">
+          <div className="px-2.5 pb-1 pt-1.5">
+            <div id="model-group-label" className="text-[10.5px] font-medium text-[var(--ink-3)]">Choose model</div>
+            <div className="mt-0.5 text-[10px] text-[var(--ink-3)]">Kimi K3 is recommended for browser tasks.</div>
           </div>
           {/*
             A group of toggle buttons rather than role="menu": Tab and
@@ -92,6 +117,9 @@ function ModelMenu({
             semantics match the behaviour without hand-rolled key handling.
           */}
           <div ref={groupRef} role="group" aria-labelledby="model-group-label">
+            {models.length === 0 && (
+              <div className="px-2.5 py-2 text-[12px] text-[var(--ink-3)]">Server default</div>
+            )}
             {models.map((option) => {
               const selected = option.id === model;
               return (
@@ -100,14 +128,15 @@ function ModelMenu({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => select(option.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left text-gray-700 hover:bg-[#f5f5f5] rounded-xl transition-colors font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                  className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[var(--ink-2)] transition-colors hover:bg-[var(--hover-2)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
                 >
                   <span className="w-[18px] shrink-0">
-                    {selected && <Check size={16} className="text-[#6d5efc]" />}
+                    {selected && <Check size={14} className="text-[var(--accent)]" />}
                   </span>
-                  <span className="truncate" title={option.id}>
+                  <span className="min-w-0 flex-1 truncate" title={option.id}>
                     {option.label}
                   </span>
+                  {option.default && <span className="rounded-full bg-[var(--accent-tint)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--accent)]">Best</span>}
                 </button>
               );
             })}
@@ -121,14 +150,18 @@ function ModelMenu({
 export interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
-  /** Called with the trimmed text; never called with an empty string. */
-  onSubmit: (text: string) => void;
+  /** Called with the trimmed text and a serializable attachment snapshot. */
+  onSubmit: (text: string, attachments: ComposerAttachment[]) => void;
   onStop: () => void;
   /** True while a request is in flight (submitted or streaming). */
   isBusy: boolean;
   models: ChatModel[];
   model?: string;
   onModelChange: (id: string) => void;
+  /** Receives the complete serializable attachment list after each change. */
+  onAttachmentsChange?: (attachments: ComposerAttachment[]) => void;
+  /** Receives user-facing upload/capture errors, or null when cleared. */
+  onAttachmentError?: (message: string | null) => void;
 }
 
 export function Composer({
@@ -140,8 +173,27 @@ export function Composer({
   models,
   model,
   onModelChange,
+  onAttachmentsChange,
+  onAttachmentError,
 }: ComposerProps) {
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [isAddingFiles, setIsAddingFiles] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  const reportAttachmentError = (message: string | null) => {
+    setAttachmentError(message);
+    onAttachmentError?.(message);
+  };
+
+  const commitAttachments = (next: ComposerAttachment[]) => {
+    attachmentsRef.current = next;
+    setAttachments(next);
+    onAttachmentsChange?.(next);
+  };
 
   // Focus the composer as soon as the side panel opens.
   useEffect(() => {
@@ -162,7 +214,8 @@ export function Composer({
 
   const send = () => {
     if (!canSend) return;
-    onSubmit(trimmed);
+    onSubmit(trimmed, [...attachmentsRef.current]);
+    commitAttachments([]);
     // Return focus for the next turn (clicking the send button steals it).
     requestAnimationFrame(() => textarea.current?.focus());
   };
@@ -175,12 +228,147 @@ export function Composer({
   const showCounter =
     trimmed.length > CHAT_LIMITS.maxMessageChars * 0.6 || overLimit;
 
+  const addFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    // Let the same file be selected again after it is removed.
+    event.target.value = '';
+    if (selected.length === 0) return;
+
+    reportAttachmentError(null);
+    const { accepted, rejected } = validateAttachmentCandidates(
+      selected,
+      attachmentsRef.current.length,
+    );
+    const validationMessage = summarizeAttachmentRejections(rejected);
+    if (validationMessage) reportAttachmentError(validationMessage);
+    if (accepted.length === 0) return;
+
+    setIsAddingFiles(true);
+    const settled = await Promise.allSettled(
+      accepted.map(async (file): Promise<ComposerAttachment> => ({
+        id: createAttachmentId(),
+        kind: 'upload',
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        size: file.size,
+        dataUrl: await readFileAsDataUrl(file),
+      })),
+    );
+    setIsAddingFiles(false);
+
+    const additions = settled.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    if (additions.length > 0) {
+      commitAttachments([...attachmentsRef.current, ...additions]);
+    }
+    if (settled.some((result) => result.status === 'rejected')) {
+      reportAttachmentError('One or more files could not be read.');
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    reportAttachmentError(null);
+    commitAttachments(
+      attachmentsRef.current.filter((attachment) => attachment.id !== id),
+    );
+  };
+
+  const captureVisibleTab = async () => {
+    reportAttachmentError(null);
+    const { accepted, rejected } = validateAttachmentCandidates(
+      [{ name: 'Visible tab screenshot.png', type: 'image/png', size: 0 }],
+      attachmentsRef.current.length,
+    );
+    if (accepted.length === 0) {
+      reportAttachmentError(
+        summarizeAttachmentRejections(rejected) ??
+          'The screenshot could not be attached.',
+      );
+      return;
+    }
+
+    if (!globalThis.chrome?.tabs?.captureVisibleTab) {
+      reportAttachmentError('Visible-tab capture is unavailable in this browser.');
+      return;
+    }
+
+    setIsCapturing(true);
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
+      const size = dataUrlByteLength(dataUrl);
+      if (!dataUrl.startsWith('data:image/') || size === 0) {
+        throw new Error('The browser returned an invalid screenshot.');
+      }
+      if (size > MAX_ATTACHMENT_BYTES) {
+        reportAttachmentError('The screenshot is larger than 10 MB.');
+        return;
+      }
+
+      const capturedAt = new Date();
+      const timestamp = capturedAt.toISOString().replace(/[:.]/g, '-');
+      commitAttachments([
+        ...attachmentsRef.current,
+        {
+          id: createAttachmentId(),
+          kind: 'capture',
+          name: `visible-tab-${timestamp}.png`,
+          mimeType: 'image/png',
+          size,
+          dataUrl,
+        },
+      ]);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message.trim() : '';
+      reportAttachmentError(
+        detail
+          ? `Could not capture the visible tab: ${detail}`
+          : 'Could not capture the visible tab. Try opening a regular webpage first.',
+      );
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
   return (
-    <div className="p-2 md:p-[10px] border border-[#dedede] rounded-[30px] md:rounded-[35px] bg-[#fafafa]/80 backdrop-blur-md shadow-[0_8px_28px_#00000012,0_2px_5px_#00000018]">
+    <div className="rounded-[18px] bg-[var(--surface)] p-2 shadow-[var(--shadow-overlay)]">
       <form
-        className="flex flex-col min-h-[100px] p-3 md:px-[18px] md:pt-[16px] md:pb-[14px] border border-[#dedede] rounded-[22px] md:rounded-[26px] bg-white shadow-inner transition-colors focus-within:border-[#a9baf6] focus-within:shadow-[0_0_0_2px_#a9baf633]"
+        className="flex min-h-[108px] flex-col rounded-[12px] bg-[var(--canvas)] px-3 pb-2.5 pt-3 transition-shadow focus-within:shadow-[0_0_0_2px_var(--focus)]"
         onSubmit={onFormSubmit}
       >
+        {attachments.length > 0 && (
+          <div
+            className="mb-2.5 flex flex-wrap gap-1.5"
+            aria-label="Attachments"
+          >
+            {attachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="group flex h-7 max-w-full items-center gap-1.5 rounded-[9px] bg-[var(--field)] px-2.5 text-[11px] font-medium text-[var(--ink-2)]"
+              >
+                {attachment.kind === 'capture' ? (
+                  <ImageIcon size={13} className="shrink-0 text-[var(--ink-3)]" aria-hidden="true" />
+                ) : (
+                  <Paperclip size={13} className="shrink-0 text-[var(--ink-3)]" aria-hidden="true" />
+                )}
+                <span className="max-w-[150px] truncate" title={attachment.name}>
+                  {attachment.name}
+                </span>
+                <span className="shrink-0 text-[10px] text-[var(--ink-3)]">
+                  {formatFileSize(attachment.size)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(attachment.id)}
+                  className="grid size-5 shrink-0 place-items-center rounded-full text-[var(--ink-3)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
+                  aria-label={`Remove ${attachment.name}`}
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={textarea}
           value={value}
@@ -200,57 +388,73 @@ export function Composer({
           }}
           placeholder="Ask ILA about this page…"
           aria-label="Message ILA"
-          aria-describedby="composer-hint"
           aria-invalid={overLimit}
           maxLength={CHAT_LIMITS.maxMessageChars * 2}
-          className="w-full min-h-[44px] p-0 resize-none border-0 outline-none text-[#222] bg-transparent leading-[1.45] text-base md:text-[17px] placeholder-[#aaa]"
+          className="min-h-[42px] w-full resize-none border-0 bg-transparent p-0 text-[13.5px] leading-[1.55] text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
         />
 
-        <div
-          id="composer-hint"
-          className="mt-1 mb-2 flex items-center justify-between gap-3 text-[11px] text-[#a8a8a8]"
-        >
-          <span>
-            <kbd className="font-sans font-medium text-[#8a8a8a]">Enter</kbd> to
-            send ·{' '}
-            <kbd className="font-sans font-medium text-[#8a8a8a]">
-              Shift + Enter
-            </kbd>{' '}
-            for a new line
-          </span>
-          {showCounter && (
-            <span
-              className={overLimit ? 'font-medium text-[#e5484d]' : undefined}
-              aria-live="polite"
-            >
-              {trimmed.length.toLocaleString()} /{' '}
-              {CHAT_LIMITS.maxMessageChars.toLocaleString()}
-            </span>
-          )}
-        </div>
+        {attachmentError && (
+          <p
+            className="mb-2 text-[11.5px] font-medium text-[var(--danger)]"
+            role="alert"
+          >
+            {attachmentError}
+          </p>
+        )}
 
-        <div className="flex items-center gap-1 md:gap-[5px] mt-auto">
+        <div className="mt-2 flex items-center gap-0.5">
           <ModelMenu
             models={models}
             model={model}
             onModelChange={onModelChange}
           />
+          {showCounter && (
+            <span className={`ml-1 text-[10px] tabular-nums ${overLimit ? 'font-medium text-[var(--danger)]' : 'text-[var(--ink-3)]'}`} aria-live="polite">
+              {trimmed.length.toLocaleString()} / {CHAT_LIMITS.maxMessageChars.toLocaleString()}
+            </span>
+          )}
           <div className="flex-1" />
-          <IconButton label="Attach file (coming soon)" disabled>
-            <Paperclip size={20} />
+          <input
+            ref={fileInput}
+            type="file"
+            accept={ATTACHMENT_ACCEPT}
+            multiple
+            onChange={(event) => void addFiles(event)}
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+          <IconButton
+            label="Attach files"
+            type="button"
+            onClick={() => fileInput.current?.click()}
+            disabled={
+              isAddingFiles || attachments.length >= MAX_ATTACHMENT_COUNT
+            }
+          >
+            <FileUp size={17} />
           </IconButton>
-          <IconButton label="Capture screenshot (coming soon)" disabled>
-            <Crop size={20} />
+          <IconButton
+            label={isCapturing ? 'Capturing visible tab' : 'Capture visible tab'}
+            type="button"
+            onClick={() => void captureVisibleTab()}
+            disabled={
+              isCapturing ||
+              isAddingFiles ||
+              attachments.length >= MAX_ATTACHMENT_COUNT
+            }
+          >
+            <Crop size={17} />
           </IconButton>
           <IconButton label="Voice input (coming soon)" disabled>
-            <Mic2 size={20} />
+            <Mic2 size={17} />
           </IconButton>
 
           {isBusy ? (
             <button
               type="button"
               onClick={onStop}
-              className="w-[38px] h-[38px] md:w-[47px] md:h-[47px] p-0 border-0 rounded-[12px] md:rounded-[15px] flex items-center justify-center bg-[#303030] hover:bg-[#181818] text-white cursor-pointer transition-colors ml-1 shadow-sm"
+              className="ml-1 grid size-9 place-items-center rounded-[10px] bg-[var(--ink)] text-[var(--canvas)] transition-[opacity,transform] hover:opacity-90 active:scale-[.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               aria-label="Stop generating"
             >
               <Square size={16} strokeWidth={3} fill="currentColor" />
@@ -258,11 +462,11 @@ export function Composer({
           ) : (
             <button
               type="submit"
-              className="w-[38px] h-[38px] md:w-[47px] md:h-[47px] p-0 border-0 rounded-[12px] md:rounded-[15px] flex items-center justify-center bg-[#aebcf0] hover:bg-[#97a8e8] text-white cursor-pointer transition-colors disabled:opacity-55 disabled:cursor-not-allowed ml-1 shadow-sm"
+              className="ml-1 grid size-9 place-items-center rounded-[10px] bg-[var(--accent)] text-white transition-[opacity,transform] hover:opacity-90 active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               disabled={!canSend}
               aria-label="Send message"
             >
-              <ArrowUp size={22} strokeWidth={2.6} />
+              <ArrowUp size={18} strokeWidth={2.5} />
             </button>
           )}
         </div>

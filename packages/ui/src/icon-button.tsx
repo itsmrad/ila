@@ -10,7 +10,7 @@ export const IconButton = forwardRef<
     aria-label={label}
     title={label}
     className={cn(
-      'w-8 h-8 md:w-[33px] md:h-[33px] grid place-items-center rounded-[10px] bg-transparent text-[#707070] hover:bg-[#f0f0f0] hover:text-[#303030] transition-colors focus-visible:outline-2 focus-visible:outline-[#a9baf6] cursor-pointer disabled:opacity-50',
+      'w-8 h-8 md:w-[33px] md:h-[33px] grid place-items-center rounded-[9px] bg-transparent text-[var(--ink-3,#707070)] hover:bg-[var(--hover,#f0f0f0)] hover:text-[var(--ink,#303030)] transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus,#a9baf6)] cursor-pointer disabled:opacity-50',
       className
     )}
     {...props}

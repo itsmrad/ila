@@ -20,7 +20,7 @@ export function ErrorToast({
     <div
       role="alert"
       aria-live="assertive"
-      className="flex items-start gap-3 rounded-[16px] border border-[#f5c2c7] bg-[#fdf2f3] px-4 py-3 text-[13px] text-[#8a1c24] shadow-[0_4px_16px_#00000010]"
+      className="flex items-start gap-3 rounded-[13px] bg-[var(--danger-tint)] px-3 py-2.5 text-[12px] text-[var(--danger)] shadow-[var(--shadow-hairline)]"
     >
       <AlertTriangle size={16} className="mt-[2px] shrink-0" aria-hidden="true" />
       <p className="flex-1 leading-snug break-words">{message}</p>
@@ -29,7 +29,7 @@ export function ErrorToast({
         <button
           type="button"
           onClick={onRetry}
-          className="flex shrink-0 items-center gap-1 rounded-[8px] px-2 py-1 font-medium text-[#8a1c24] transition-colors hover:bg-[#f8dcdf] focus-visible:outline-2 focus-visible:outline-[#8a1c24] cursor-pointer"
+          className="flex shrink-0 items-center gap-1 rounded-[8px] px-2 py-1 font-medium text-[var(--danger)] transition-colors hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-[var(--danger)]"
         >
           <RotateCcw size={13} aria-hidden="true" /> Try again
         </button>
@@ -39,7 +39,7 @@ export function ErrorToast({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss error"
-        className="shrink-0 rounded-[8px] p-1 transition-colors hover:bg-[#f8dcdf] focus-visible:outline-2 focus-visible:outline-[#8a1c24] cursor-pointer"
+        className="shrink-0 rounded-[8px] p-1 transition-colors hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-[var(--danger)]"
       >
         <X size={14} aria-hidden="true" />
       </button>

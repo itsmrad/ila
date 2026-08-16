@@ -1,3 +1,10 @@
+import { executeAutomationRequest } from '../lib/automation-background';
+import {
+  AUTOMATION_EXECUTE_MESSAGE,
+  AUTOMATION_RESULT_MESSAGE,
+  AutomationValidationError,
+  validateAutomationRequest,
+} from '../lib/automation-protocol';
 import {
   AUTOMATION_PROGRESS,
   automationStartMessageSchema,
@@ -9,14 +16,48 @@ import {
 /**
  * Background service worker.
  *
- * Owns automation execution so the side panel stays a thin client. Execution is
- * mocked in this stage: the worker validates the payload, acknowledges it, and
- * emits a short progress sequence so the messaging path can be verified
- * end-to-end.
+ * Owns automation execution so the side panel stays a thin client. It serves
+ * both the production browser-agent protocol and the saved
+ * automation progress protocol used by the tab workspace.
  */
 export default defineBackground(() => {
   browser.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
     // Firefox and older Chromium versions do not expose this API.
+  });
+
+  browser.runtime.onMessage.addListener(async (message, sender) => {
+    if (
+      typeof message !== 'object' ||
+      message === null ||
+      message.type !== AUTOMATION_EXECUTE_MESSAGE
+    ) {
+      return undefined;
+    }
+
+    // onMessage is extension-internal, but checking the sender keeps the
+    // boundary explicit if externally-connectable messaging is added later.
+    if (sender.id !== browser.runtime.id) return undefined;
+
+    try {
+      return await executeAutomationRequest(validateAutomationRequest(message));
+    } catch (error) {
+      return {
+        type: AUTOMATION_RESULT_MESSAGE,
+        requestId:
+          typeof message.requestId === 'string'
+            ? message.requestId.slice(0, 128)
+            : 'invalid',
+        ok: false,
+        confirmation: { required: false, approved: false },
+        error: {
+          code: 'INVALID_REQUEST',
+          message:
+            error instanceof AutomationValidationError
+              ? error.message
+              : 'Invalid automation request',
+        },
+      };
+    }
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

@@ -7,9 +7,11 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./chat": "./src/chat.ts"
+    "./chat": "./src/chat.ts",
+    "./agent": "./src/agent.ts"
   },
   "scripts": {
+    "test": "bun test",
     "compile": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },

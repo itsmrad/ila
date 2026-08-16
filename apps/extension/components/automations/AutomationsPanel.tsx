@@ -135,7 +135,7 @@ export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) 
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[12px] text-[#8a8a8a]">
+      <p className="text-[12px] text-[var(--ink-3)]">
         {selectedTabs.length > 0
           ? `${selectedTabs.length} tab(s) will be passed to the automation.`
           : 'No tab context selected — automations will run without tab data.'}
@@ -148,14 +148,14 @@ export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) 
           return (
             <li
               key={automation.id}
-              className="rounded-[16px] border border-[#e8e8e8] bg-white p-3 shadow-[0_2px_6px_#00000008]"
+              className="rounded-[15px] bg-[var(--surface)] p-3 shadow-[var(--shadow-hairline)]"
             >
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-medium text-[#282828]">
+                  <p className="text-[13px] font-medium text-[var(--ink)]">
                     {automation.label}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-[#a0a0a0]">
+                  <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">
                     {automation.description}
                   </p>
                 </div>
@@ -163,7 +163,7 @@ export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) 
                   type="button"
                   onClick={() => void run(automation.id)}
                   disabled={!automation.available || busy}
-                  className="flex shrink-0 items-center gap-1.5 rounded-[12px] bg-[#aebcf0] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#97a8e8] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
                 >
                   {busy ? (
                     <Loader2 size={13} className="animate-spin" aria-hidden="true" />
@@ -178,11 +178,11 @@ export function AutomationsPanel({ mode, selectedTabs }: AutomationsPanelProps) 
                 <p
                   aria-live="polite"
                   className={`mt-2 flex items-center gap-1.5 text-[11px] ${
-                    state.status === 'error' ? 'text-[#b4232a]' : 'text-[#707070]'
+                    state.status === 'error' ? 'text-[var(--danger)]' : 'text-[var(--ink-2)]'
                   }`}
                 >
                   {state.status === 'complete' && (
-                    <Check size={12} className="text-[#2f8f4e]" aria-hidden="true" />
+                    <Check size={12} className="text-[var(--success)]" aria-hidden="true" />
                   )}
                   {state.status === 'error' && (
                     <CircleAlert size={12} aria-hidden="true" />

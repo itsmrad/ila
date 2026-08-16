@@ -1,5 +1,6 @@
-import { Eraser, History, LogOut, PenLine, Settings2 } from 'lucide-react';
+import { Brain, Eraser, History, LogOut, Moon, PenLine, Settings2, Sun } from 'lucide-react';
 import { IconButton } from '@ila/ui';
+import { IlaMark } from '@ila/ui';
 import type { SessionUser } from '../../lib/auth';
 
 interface UtilityBarProps {
@@ -17,6 +18,10 @@ interface UtilityBarProps {
   hasConversation?: boolean;
   user?: SessionUser | null;
   onSignOut?: () => void;
+  onOpenMemory: () => void;
+  memoryEnabled?: boolean;
+  darkMode: boolean;
+  onToggleTheme: () => void;
 }
 
 function initialOf(user: SessionUser): string {
@@ -33,32 +38,49 @@ export function UtilityBar({
   hasConversation = false,
   user,
   onSignOut,
+  onOpenMemory,
+  memoryEnabled = false,
+  darkMode,
+  onToggleTheme,
 }: UtilityBarProps) {
   return (
-    <header className="h-[76px] px-4 md:px-[30px] pt-[22px] pb-[14px] flex items-center justify-between shrink-0">
-      <div className="flex items-center gap-2 md:gap-[17px]">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-dashed border-[var(--line)] px-3.5">
+      <div className="flex items-center gap-1">
+        <span className="mr-2 flex items-center gap-2 pr-2 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+          <span className="scale-[.8]"><IlaMark /></span> ILA
+        </span>
         <IconButton label="New chat" onClick={onNewChat} disabled={busy}>
-          <PenLine size={20} />
+          <PenLine size={17} />
         </IconButton>
         <IconButton label="Conversation history" onClick={onOpenHistory}>
-          <History size={20} />
+          <History size={17} />
         </IconButton>
         <IconButton
           label="Clear conversation"
           onClick={onClearConversation}
           disabled={busy || !hasConversation}
         >
-          <Eraser size={20} />
+          <Eraser size={17} />
         </IconButton>
       </div>
-      <div className="flex items-center gap-2 md:gap-[17px]">
-        <IconButton label="Settings" onClick={onOpenSettings}>
-          <Settings2 size={20} />
+      <div className="flex items-center gap-1">
+        <IconButton label={darkMode ? 'Use light theme' : 'Use dark theme'} onClick={onToggleTheme}>
+          {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+        </IconButton>
+        <IconButton
+          label={memoryEnabled ? 'Browsing memory is on' : 'Browsing memory'}
+          onClick={onOpenMemory}
+          className={memoryEnabled ? '!bg-[var(--accent-tint)] !text-[var(--accent)]' : ''}
+        >
+          <Brain size={17} />
+        </IconButton>
+        <IconButton label="Agent settings" onClick={onOpenSettings}>
+          <Settings2 size={17} />
         </IconButton>
         {user && (
           <>
             <span
-              className="grid h-[28px] w-[28px] place-items-center rounded-full bg-[#6d5efc] text-[12px] font-semibold text-white select-none"
+              className="grid size-7 select-none place-items-center rounded-full bg-[var(--accent)] text-[11px] font-semibold text-white"
               title={user.email}
               aria-label={`Signed in as ${user.name || user.email}`}
             >
@@ -73,7 +95,7 @@ export function UtilityBar({
               )}
             </span>
             <IconButton label="Sign out" onClick={onSignOut}>
-              <LogOut size={20} />
+              <LogOut size={17} />
             </IconButton>
           </>
         )}

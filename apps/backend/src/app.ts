@@ -79,7 +79,12 @@ export function createApp(): Express {
   // tighter budget than the generic API so an oversized payload is rejected
   // before it is fully buffered. Registered first — body-parser marks the
   // request as parsed, so the generic parser below skips it.
-  app.use("/api/chat", express.json({ limit: "128kb" }));
+  // Chat may carry up to five bounded inline file parts for the current turn.
+  // They are model context only and are never persisted by the chat service.
+  app.use("/api/chat", express.json({ limit: "64mb" }));
+  // Initial agent planning may carry one bounded combined attachment payload.
+  // Follow-up control requests contain metadata/context only.
+  app.use(["/api/agent/plan", "/api/agent/attachment-context"], express.json({ limit: "15mb" }));
 
   // JSON parsing for everything else.
   app.use(express.json({ limit: "1mb" }));

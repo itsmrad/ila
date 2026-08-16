@@ -5,6 +5,7 @@ import {
   type PageContext,
   type SendMessageRequest,
 } from '@ila/shared';
+import type { FileUIPart } from 'ai';
 import { BACKEND_URL } from './config';
 import { authHeaders, toChatApiError } from './chat-api';
 
@@ -65,6 +66,19 @@ function toInboundMessage(
   return { id: message.id, role: 'user', parts };
 }
 
+function toAttachments(
+  message: UIMessage,
+): NonNullable<SendMessageRequest['attachments']> {
+  return message.parts
+    .filter((part): part is FileUIPart => part.type === 'file')
+    .slice(0, 5)
+    .map((part) => ({
+      name: (part.filename || 'attachment').slice(0, 255),
+      mediaType: part.mediaType.slice(0, 120),
+      dataUrl: part.url,
+    }));
+}
+
 export function createChatTransport(
   context: ChatTransportContext,
 ): DefaultChatTransport<UIMessage> {
@@ -93,6 +107,7 @@ export function createChatTransport(
       const last = messages.at(-1);
       const message =
         last && last.role === 'user' ? toInboundMessage(last) : undefined;
+      const attachments = last ? toAttachments(last) : [];
 
       if (!message) {
         throw new Error('Nothing to send.');
@@ -103,6 +118,7 @@ export function createChatTransport(
         message,
         ...(model ? { model } : {}),
         ...(pageContext ? { pageContext } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
       };
       return { body };
     },

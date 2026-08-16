@@ -14,11 +14,11 @@
     "compile": {
       "dependsOn": ["^build"]
     },
-    "test": {
-      "dependsOn": ["^build"]
-    },
     "lint": {
       "dependsOn": ["^build"]
+    },
+    "test": {
+      "outputs": []
     }
   }
 }

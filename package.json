@@ -8,8 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
+    "dev": "turbo run dev --filter=@ila/backend --filter=@ila/extension",
+    "web:dev": "turbo run dev --filter=@ila/web",
+    "build": "bun run test && turbo run build",
     "compile": "turbo run compile",
     "test": "turbo run test",
     "lint": "turbo run lint",

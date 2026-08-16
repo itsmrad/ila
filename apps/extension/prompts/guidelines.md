@@ -58,9 +58,9 @@ For multi-step tasks, state a brief plan:
 
 ```
 
-## Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.  
-  
-5. Some more points : 
+## Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+5. Some more points :
 
 - every new feature is linked to a branch like a new xyz branch which should definitely be branched off from main unless specified, you will make changes in the new branch and commit on that branch, there can be multiple commits on one branch, and after completion push it to github then i will manually merge it
 - make sure to reuse code as much as possible 

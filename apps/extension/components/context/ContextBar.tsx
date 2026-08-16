@@ -103,10 +103,10 @@ export function ContextBar({
               aria-pressed={isActive}
               disabled={unavailable && option.mode !== 'none'}
               onClick={() => select(option.mode)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6] disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-40 ${
                 isActive
-                  ? 'border-[#c9d2f8] bg-[#eef1fd] text-[#4b52a8]'
-                  : 'border-[#e5e5e5] bg-white/70 text-[#6b6b6b] hover:bg-[#f5f5f5]'
+                  ? 'bg-[var(--accent-tint)] text-[var(--accent)] shadow-[var(--shadow-hairline)]'
+                  : 'bg-[var(--surface)] text-[var(--ink-2)] shadow-[var(--shadow-hairline)] hover:bg-[var(--hover)]'
               }`}
             >
               <Icon size={12} aria-hidden="true" />
@@ -124,7 +124,7 @@ export function ContextBar({
         })}
       </div>
 
-      <p className="px-1 text-[11px] text-[#a0a0a0]" aria-live="polite">
+      <p className="px-1 text-[11px] text-[var(--ink-3)]" aria-live="polite">
         {unavailable
           ? 'No tabs available to share.'
           : describeSelection(mode, selectedTabs)}
@@ -170,10 +170,10 @@ function TabPicker({
 
   return (
     <div
-      className="max-h-[220px] overflow-auto rounded-[16px] border border-[#e8e8e8] bg-white p-1.5 shadow-[0_10px_30px_#00000014] scrollbar-thin"
+      className="max-h-[220px] overflow-auto rounded-[15px] bg-[var(--surface)] p-1.5 shadow-[var(--shadow-overlay)] scrollbar-thin"
     >
       {tabs.length === 0 ? (
-        <p className="px-2 py-3 text-center text-[12px] text-[#a0a0a0]">
+        <p className="px-2 py-3 text-center text-[12px] text-[var(--ink-3)]">
           No tabs available to share.
         </p>
       ) : (
@@ -189,14 +189,14 @@ function TabPicker({
                   disabled={!checked && atLimit}
                   onClick={() => onToggleTab(tab.id)}
                   title={tab.url}
-                  className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-[#f5f5f5] focus-visible:outline-2 focus-visible:outline-[#a9baf6] disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span
                     aria-hidden="true"
                     className={`grid h-[14px] w-[14px] shrink-0 place-items-center rounded-[4px] border ${
                       checked
-                        ? 'border-[#6d5efc] bg-[#6d5efc] text-white'
-                        : 'border-[#d4d4d4]'
+                        ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
+                        : 'border-[var(--line-strong)]'
                     }`}
                   >
                     {checked && <Check size={10} strokeWidth={3} />}
@@ -210,15 +210,15 @@ function TabPicker({
                   ) : (
                     <Globe
                       size={14}
-                      className="shrink-0 text-[#b0b0b0]"
+                      className="shrink-0 text-[var(--ink-3)]"
                       aria-hidden="true"
                     />
                   )}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px] text-[#282828]">
+                    <span className="block truncate text-[12px] text-[var(--ink)]">
                       {tab.title}
                     </span>
-                    <span className="block truncate text-[10px] text-[#a0a0a0]">
+                    <span className="block truncate text-[10px] text-[var(--ink-3)]">
                       {hostnameOf(tab.url)}
                     </span>
                   </span>
@@ -230,7 +230,7 @@ function TabPicker({
       )}
 
       {atLimit && (
-        <p className="px-2 py-1 text-[10px] text-[#a0a0a0]">
+        <p className="px-2 py-1 text-[10px] text-[var(--ink-3)]">
           Up to {CHAT_LIMITS.maxContextTabs} tabs can be shared at once.
         </p>
       )}

@@ -148,6 +148,18 @@ export const inboundUserMessageSchema = z
 
 export type InboundUserMessage = z.infer<typeof inboundUserMessageSchema>;
 
+/** Bounded inline file context for the current turn (never persisted). */
+export const chatAttachmentSchema = z.object({
+  name: z.string().min(1).max(255),
+  mediaType: z.string().min(1).max(120),
+  dataUrl: z
+    .string()
+    .max(14_000_000)
+    .refine((value) => /^data:[^;,]+;base64,/i.test(value), 'file must be a base64 data URL'),
+});
+
+export type ChatAttachment = z.infer<typeof chatAttachmentSchema>;
+
 export const sendMessageRequestSchema = z
   .object({
     /** Existing conversation to append to. Omitted for the first turn. */
@@ -162,6 +174,7 @@ export const sendMessageRequestSchema = z
     /** Requested model id. Must be in the server-side allowlist. */
     model: z.string().min(1).max(120).optional(),
     pageContext: pageContextSchema.optional(),
+    attachments: z.array(chatAttachmentSchema).max(5).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.retry) {

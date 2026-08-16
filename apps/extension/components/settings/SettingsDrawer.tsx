@@ -88,24 +88,27 @@ export function SettingsDrawer({
       ref={dialog}
       role="dialog"
       aria-modal="true"
-      aria-label="Settings"
-      className="absolute inset-0 z-40 flex flex-col bg-white/97 backdrop-blur-sm"
+      aria-label="Connections and provider keys"
+      className="absolute inset-0 z-40 flex flex-col bg-[var(--page)]"
     >
-      <header className="flex h-[76px] shrink-0 items-center justify-between px-4 pt-[22px] pb-[14px] md:px-[30px]">
-        <h2 className="text-[15px] font-semibold text-[#181818]">Settings</h2>
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-dashed border-[var(--line)] px-4">
+        <div>
+          <h2 className="text-[13px] font-semibold text-[var(--ink)]">Connections and keys</h2>
+          <p className="mt-0.5 text-[10.5px] text-[var(--ink-3)]">Secure account-level integrations</p>
+        </div>
         <button
           ref={closeButton}
           type="button"
           onClick={onClose}
           aria-label="Close settings"
-          className="grid h-8 w-8 place-items-center rounded-[10px] text-[#707070] transition-colors hover:bg-[#f0f0f0] hover:text-[#303030] focus-visible:outline-2 focus-visible:outline-[#a9baf6] cursor-pointer"
+          className="grid size-8 cursor-pointer place-items-center rounded-[8px] text-[var(--ink-3)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
         >
           <X size={18} aria-hidden="true" />
         </button>
       </header>
 
-      <div className="flex-1 overflow-auto px-4 pb-8 md:px-[30px] scrollbar-thin">
-        <div className="flex flex-col gap-7">
+      <div className="flex-1 overflow-auto px-4 pb-8 pt-4 scrollbar-thin">
+        <div className="flex flex-col gap-6">
           <PreferencesSection
             preferences={preferences}
             onPreferencesChange={onPreferencesChange}
@@ -134,8 +137,8 @@ function Section({
   return (
     <section className="flex flex-col gap-2">
       <div>
-        <h3 className="text-[13px] font-semibold text-[#282828]">{title}</h3>
-        <p className="mt-0.5 text-[11px] text-[#a0a0a0]">{description}</p>
+        <h3 className="text-[13px] font-semibold text-[var(--ink)]">{title}</h3>
+        <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">{description}</p>
       </div>
       {children}
     </section>
@@ -146,7 +149,7 @@ function ErrorNote({ message }: { message: string }) {
   return (
     <p
       role="alert"
-      className="rounded-[12px] border border-[#f5c2c7] bg-[#fdf2f3] px-3 py-2 text-[11px] text-[#8a1c24]"
+      className="rounded-[12px] bg-[var(--danger-tint)] px-3 py-2 text-[11px] text-[var(--danger)] shadow-[var(--shadow-hairline)]"
     >
       {message}
     </p>
@@ -173,8 +176,8 @@ function PreferencesSection({
       title="Preferences"
       description="Stored on this device only."
     >
-      <label className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e8e8e8] bg-white px-3 py-2.5">
-        <span className="text-[12px] text-[#404040]">
+      <label className="flex items-center justify-between gap-3 rounded-[13px] bg-[var(--surface)] px-3 py-2.5 shadow-[var(--shadow-hairline)]">
+        <span className="text-[12px] text-[var(--ink-2)]">
           Share the current tab by default
         </span>
         <input
@@ -186,7 +189,7 @@ function PreferencesSection({
               attachContextByDefault: event.target.checked,
             })
           }
-          className="h-4 w-4 accent-[#6d5efc] cursor-pointer"
+          className="size-4 cursor-pointer accent-[var(--accent)]"
         />
       </label>
     </Section>
@@ -250,15 +253,15 @@ function IntegrationsSection() {
           {integrations.map((integration) => (
             <li
               key={integration.app}
-              className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e8e8e8] bg-white px-3 py-2.5"
+              className="flex items-center justify-between gap-3 rounded-[13px] bg-[var(--surface)] px-3 py-2.5 shadow-[var(--shadow-hairline)]"
             >
               <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-[#282828]">
+                <span className="block text-[12px] font-medium text-[var(--ink)]">
                   {integration.label}
                 </span>
                 <span
                   className={`block text-[11px] ${
-                    integration.connected ? 'text-[#2f8f4e]' : 'text-[#a0a0a0]'
+                    integration.connected ? 'text-[var(--success)]' : 'text-[var(--ink-3)]'
                   }`}
                 >
                   {integration.connected ? 'Connected' : 'Not connected'}
@@ -269,7 +272,7 @@ function IntegrationsSection() {
                   type="button"
                   onClick={() => void connect(integration.app)}
                   disabled={pending === integration.app}
-                  className="shrink-0 rounded-[10px] border border-[#e0e0e0] px-2.5 py-1 text-[11px] font-medium text-[#505050] transition-colors hover:bg-[#f5f5f5] disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                  className="shrink-0 cursor-pointer rounded-[9px] bg-[var(--field)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink-2)] transition-colors hover:bg-[var(--hover)] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
                 >
                   {pending === integration.app ? 'Opening…' : 'Connect'}
                 </button>
@@ -372,7 +375,7 @@ function ByokSection() {
       {error && <ErrorNote message={error} />}
 
       {unavailable ? (
-        <p className="rounded-[14px] border border-[#e8e8e8] bg-white px-3 py-2.5 text-[11px] text-[#707070]">
+        <p className="rounded-[13px] bg-[var(--surface)] px-3 py-2.5 text-[11px] text-[var(--ink-2)] shadow-[var(--shadow-hairline)]">
           This ILA server is not set up to store provider keys yet.
         </p>
       ) : (
@@ -385,10 +388,10 @@ function ByokSection() {
                 {providers.map((stored) => (
                   <li
                     key={stored}
-                    className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e8e8e8] bg-white px-3 py-2.5"
+                    className="flex items-center justify-between gap-3 rounded-[13px] bg-[var(--surface)] px-3 py-2.5 shadow-[var(--shadow-hairline)]"
                   >
-                    <span className="flex items-center gap-2 text-[12px] text-[#282828]">
-                      <Check size={13} className="text-[#2f8f4e]" aria-hidden="true" />
+                    <span className="flex items-center gap-2 text-[12px] text-[var(--ink)]">
+                      <Check size={13} className="text-[var(--success)]" aria-hidden="true" />
                       {LLM_PROVIDER_LABELS[stored]} key saved
                     </span>
                     <button
@@ -396,7 +399,7 @@ function ByokSection() {
                       onClick={() => void remove(stored)}
                       disabled={removing === stored}
                       aria-label={`Remove ${LLM_PROVIDER_LABELS[stored]} key`}
-                      className="grid h-7 w-7 shrink-0 place-items-center rounded-[9px] text-[#b0b0b0] transition-colors hover:bg-[#fdf2f3] hover:text-[#e5484d] disabled:opacity-40 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                      className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-[9px] text-[var(--ink-3)] transition-colors hover:bg-[var(--danger-tint)] hover:text-[var(--danger)] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
                     >
                       {removing === stored ? (
                         <Loader2 size={13} className="animate-spin" aria-hidden="true" />
@@ -413,7 +416,7 @@ function ByokSection() {
           <form onSubmit={submit} className="flex flex-col gap-2">
             <label
               htmlFor="byok-provider"
-              className="text-[11px] font-medium text-[#707070]"
+              className="text-[11px] font-medium text-[var(--ink-2)]"
             >
               Provider
             </label>
@@ -423,7 +426,7 @@ function ByokSection() {
               onChange={(event) =>
                 setProvider(event.target.value as LlmProvider)
               }
-              className="rounded-[12px] border border-[#e0e0e0] bg-white px-3 py-2 text-[12px] text-[#282828] cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+              className="cursor-pointer rounded-[11px] bg-[var(--field)] px-3 py-2 text-[12px] text-[var(--ink)] shadow-[var(--shadow-hairline)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
             >
               {LLM_PROVIDERS.map((option) => (
                 <option key={option} value={option}>
@@ -434,7 +437,7 @@ function ByokSection() {
 
             <label
               htmlFor="byok-key"
-              className="text-[11px] font-medium text-[#707070]"
+              className="text-[11px] font-medium text-[var(--ink-2)]"
             >
               API key
             </label>
@@ -452,21 +455,21 @@ function ByokSection() {
               autoComplete="off"
               spellCheck={false}
               maxLength={BYOK_LIMITS.maxKeyChars}
-              className="rounded-[12px] border border-[#e0e0e0] bg-white px-3 py-2 font-mono text-[12px] text-[#282828] focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+              className="rounded-[11px] bg-[var(--field)] px-3 py-2 font-mono text-[12px] text-[var(--ink)] shadow-[var(--shadow-hairline)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
             />
 
             <div className="flex items-center gap-2">
               <button
                 type="submit"
                 disabled={apiKey.trim().length < BYOK_LIMITS.minKeyChars || saving}
-                className="rounded-[12px] bg-[#aebcf0] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#97a8e8] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#a9baf6]"
+                className="cursor-pointer rounded-[10px] bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
               >
                 {saving ? 'Saving…' : 'Save key'}
               </button>
               {saved && (
                 <span
                   aria-live="polite"
-                  className="text-[11px] text-[#2f8f4e]"
+                  className="text-[11px] text-[var(--success)]"
                 >
                   Saved. It cannot be shown again.
                 </span>
@@ -481,7 +484,7 @@ function ByokSection() {
 
 function Loading() {
   return (
-    <p className="flex items-center gap-2 px-1 py-2 text-[11px] text-[#a0a0a0]">
+    <p className="flex items-center gap-2 px-1 py-2 text-[11px] text-[var(--ink-3)]">
       <Loader2 size={13} className="animate-spin" aria-hidden="true" />
       Loading…
     </p>

@@ -80,7 +80,7 @@ to access the guideline for this project
 
 **Instructions:**
 
-- **Do not store OAuth tokens or Composio session tokens in** [`chrome.storage`](http://chrome.storage)**.**  
+- **Do not store OAuth tokens or Composio session tokens in** [`chrome.storage`](http://chrome.storage)**.**
 Instead:
   - Call backend endpoints:
     - `GET /integrations/status` → list of connected apps + status.
@@ -113,4 +113,3 @@ The extension **only** displays status and triggers flows.
 
 - Never log the key or show it after initial entry.
 - Treat [`chrome.storage](http://chrome.storage).local` as **non-secure**; only store indicators or opaque tokens if absolutely necessary, never secrets.
-

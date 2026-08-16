@@ -49,12 +49,23 @@ function backendHostPermissions(env: ConfigEnv): string[] {
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  // Keep WXT's HMR server away from the conventional web-app port. The
+  // extension-first development stack does not need or start apps/web.
+  dev: {
+    server: { port: 5_173, strictPort: true },
+  },
   manifest: (env) => ({
     name: 'ILA',
     description: 'Your intelligent browser productivity assistant.',
     // `tabs` is needed to read the active tab's title/URL for page context.
-    permissions: ['sidePanel', 'identity', 'storage', 'tabs'],
-    host_permissions: backendHostPermissions(env),
+    permissions: ['sidePanel', 'identity', 'storage', 'tabs', 'activeTab'],
+    // captureVisibleTab requires Chrome's special <all_urls> host grant when
+    // the call originates from a side-panel control rather than the toolbar
+    // action. Content scripts remain restricted to HTTP(S) by their matches.
+    host_permissions: [
+      ...backendHostPermissions(env),
+      '<all_urls>',
+    ],
     action: { default_title: 'Open ILA' },
   }),
   vite: () => ({ plugins: [tailwindcss()] }),

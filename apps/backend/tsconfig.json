@@ -2,7 +2,7 @@
   "extends": "@ila/typescript-config/base.json",
   "compilerOptions": {
     "lib": ["ESNext"],
-    "types": ["node", "bun"],
+    "types": ["node"],
     "moduleResolution": "Bundler",
     "module": "ESNext",
     "target": "ESNext",
